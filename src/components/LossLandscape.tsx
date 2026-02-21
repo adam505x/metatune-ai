@@ -1,243 +1,258 @@
-import { useRef, useMemo, useState, useEffect } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
-import * as THREE from "three";
+import { useState, useEffect, useMemo } from "react";
+import {
+  AreaChart,
+  Area,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ResponsiveContainer,
+  ReferenceDot,
+  ReferenceLine,
+  Tooltip,
+  ComposedChart,
+} from "recharts";
 
-const GRID = 80;
-const SIZE = 5;
+// Simulated GP surrogate for Bayesian Optimization
+// Generate a smooth function + confidence band + observed samples
 
-// Generate loss landscape heightmap
-function generateHeightmap() {
-  const data: number[][] = [];
-  for (let i = 0; i < GRID; i++) {
-    data[i] = [];
-    for (let j = 0; j < GRID; j++) {
-      const x = (i / GRID - 0.5) * SIZE * 2;
-      const z = (j / GRID - 0.5) * SIZE * 2;
+function gpMean(x: number): number {
+  return (
+    0.22 +
+    0.35 * Math.exp(-((x - 0.28) ** 2) / 0.02) +
+    0.15 * Math.sin(x * 8) * Math.exp(-((x - 0.5) ** 2) / 0.08) +
+    0.38 * Math.exp(-((x - 0.76) ** 2) / 0.025) -
+    0.1 * Math.cos(x * 12) * 0.08
+  );
+}
 
-      // Create a landscape with peaks and valleys
-      const d = Math.sqrt(x * x + z * z);
-      const valley = -1.5 * Math.exp(-d * d * 0.15);
-      const peak1 = 1.2 * Math.exp(-((x - 2) ** 2 + (z - 1.5) ** 2) * 0.4);
-      const peak2 = 1.0 * Math.exp(-((x + 2.5) ** 2 + (z - 2) ** 2) * 0.3);
-      const peak3 = 0.8 * Math.exp(-((x - 1) ** 2 + (z + 2.5) ** 2) * 0.35);
-      const peak4 = 1.4 * Math.exp(-((x + 1.5) ** 2 + (z + 1) ** 2) * 0.5);
-      const noise = Math.sin(x * 3) * Math.cos(z * 2.5) * 0.15 + Math.sin(x * 5 + z * 3) * 0.08;
+function generateChartData() {
+  const data: {
+    x: number;
+    mean: number;
+    upper: number;
+    lower: number;
+    band: [number, number];
+  }[] = [];
 
-      data[i][j] = valley + peak1 + peak2 + peak3 + peak4 + noise + 0.3;
+  for (let i = 0; i <= 200; i++) {
+    const x = i / 200;
+    const mean = gpMean(x);
+    // Confidence widens away from observed points
+    const observedXs = [0.1, 0.35, 0.42, 0.76, 0.95];
+    let minDist = 1;
+    for (const ox of observedXs) {
+      minDist = Math.min(minDist, Math.abs(x - ox));
     }
+    const uncertainty = 0.06 + minDist * 0.45;
+    const upper = mean + uncertainty;
+    const lower = Math.max(0, mean - uncertainty);
+
+    data.push({
+      x: Math.round(x * 100) / 100,
+      mean,
+      upper,
+      lower,
+      band: [lower, upper],
+    });
   }
   return data;
 }
 
-// Optimization path from a high point to the minimum
-const optimizationPath: [number, number, number][] = [];
-{
-  const steps = 40;
-  const startX = 3.5, startZ = 3.0;
-  const endX = 0.0, endZ = 0.0;
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const ease = t * t * (3 - 2 * t);
-    const x = startX + (endX - startX) * ease + Math.sin(t * Math.PI * 3) * 0.3 * (1 - t);
-    const z = startZ + (endZ - startZ) * ease + Math.cos(t * Math.PI * 2.5) * 0.25 * (1 - t);
-    optimizationPath.push([x, 0, z]);
-  }
-}
+const observedPoints = [
+  { x: 0.1, y: 0.28, label: "Trial 1" },
+  { x: 0.35, y: 0.55, label: "Trial 2" },
+  { x: 0.42, y: 0.44, label: "Trial 3" },
+  { x: 0.76, y: 0.6, label: "Best" },
+  { x: 0.95, y: 0.44, label: "Trial 5" },
+];
 
-function Terrain({ heightmap }: { heightmap: number[][] }) {
-  const meshRef = useRef<THREE.Mesh>(null);
+const bestPoint = observedPoints.reduce((best, p) =>
+  p.y > best.y ? p : best
+);
 
-  const { geometry, colors } = useMemo(() => {
-    const geo = new THREE.PlaneGeometry(SIZE * 2, SIZE * 2, GRID - 1, GRID - 1);
-    geo.rotateX(-Math.PI / 2);
-
-    const positions = geo.attributes.position;
-    const colorsArr = new Float32Array(positions.count * 3);
-
-    for (let i = 0; i < GRID; i++) {
-      for (let j = 0; j < GRID; j++) {
-        const idx = i * GRID + j;
-        const h = heightmap[i][j];
-        positions.setY(idx, h);
-
-        // Color gradient: deep blue (low) → cyan → green → red (high)
-        const t = (h + 1.5) / 3.0;
-        const color = new THREE.Color();
-        if (t < 0.25) {
-          color.setHSL(0.6, 0.8, 0.15 + t * 1.5);
-        } else if (t < 0.5) {
-          color.setHSL(0.5 - (t - 0.25) * 1.2, 0.7, 0.3 + t * 0.4);
-        } else if (t < 0.75) {
-          color.setHSL(0.3 - (t - 0.5) * 0.8, 0.6, 0.4 + t * 0.2);
-        } else {
-          color.setHSL(0.0, 0.7, 0.35 + (t - 0.75) * 0.6);
-        }
-        colorsArr[idx * 3] = color.r;
-        colorsArr[idx * 3 + 1] = color.g;
-        colorsArr[idx * 3 + 2] = color.b;
-      }
-    }
-
-    geo.setAttribute("color", new THREE.BufferAttribute(colorsArr, 3));
-    geo.computeVertexNormals();
-    return { geometry: geo, colors: colorsArr };
-  }, [heightmap]);
-
+const CustomTooltip = ({ active, payload }: any) => {
+  if (!active || !payload?.length) return null;
+  const d = payload[0]?.payload;
+  if (!d) return null;
   return (
-    <mesh ref={meshRef} geometry={geometry}>
-      <meshPhongMaterial vertexColors wireframe={false} side={THREE.DoubleSide} shininess={20} />
-    </mesh>
+    <div className="bg-card border border-border rounded-md px-3 py-2 shadow-md text-xs">
+      <p className="text-foreground font-medium">HP = {d.x.toFixed(2)}</p>
+      <p className="text-muted-foreground">
+        GP mean: <span className="font-mono text-foreground">{d.mean.toFixed(3)}</span>
+      </p>
+      <p className="text-muted-foreground">
+        CI: [{d.band[0].toFixed(2)}, {d.band[1].toFixed(2)}]
+      </p>
+    </div>
   );
-}
+};
 
-function WireframeTerrain({ heightmap }: { heightmap: number[][] }) {
-  const geo = useMemo(() => {
-    const g = new THREE.PlaneGeometry(SIZE * 2, SIZE * 2, GRID - 1, GRID - 1);
-    g.rotateX(-Math.PI / 2);
-    const positions = g.attributes.position;
-    for (let i = 0; i < GRID; i++) {
-      for (let j = 0; j < GRID; j++) {
-        positions.setY(i * GRID + j, heightmap[i][j] + 0.01);
-      }
-    }
-    g.computeVertexNormals();
-    return g;
-  }, [heightmap]);
-
-  return (
-    <mesh geometry={geo}>
-      <meshBasicMaterial wireframe color="#ffffff" opacity={0.06} transparent />
-    </mesh>
-  );
-}
-
-function OptimizationPathLine({ heightmap, showPath }: { heightmap: number[][]; showPath: boolean }) {
-  const [progress, setProgress] = useState(0);
-
-  useEffect(() => {
-    if (!showPath) { setProgress(0); return; }
-    const interval = setInterval(() => {
-      setProgress((p) => {
-        if (p >= optimizationPath.length - 1) { clearInterval(interval); return p; }
-        return p + 1;
-      });
-    }, 100);
-    return () => clearInterval(interval);
-  }, [showPath]);
-
-  const points = useMemo(() => {
-    const pts: THREE.Vector3[] = [];
-    const visiblePath = optimizationPath.slice(0, progress + 1);
-    for (const [x, , z] of visiblePath) {
-      const gi = Math.min(GRID - 1, Math.max(0, Math.round(((x / (SIZE * 2)) + 0.5) * (GRID - 1))));
-      const gj = Math.min(GRID - 1, Math.max(0, Math.round(((z / (SIZE * 2)) + 0.5) * (GRID - 1))));
-      const y = heightmap[gi]?.[gj] ?? 0;
-      pts.push(new THREE.Vector3(x, y + 0.1, z));
-    }
-    return pts;
-  }, [heightmap, progress]);
-
-  if (points.length < 2) return null;
-
-  const curve = new THREE.CatmullRomCurve3(points);
-  const tubeGeo = new THREE.TubeGeometry(curve, points.length * 4, 0.03, 8, false);
-
-  // Current position marker
-  const current = points[points.length - 1];
-
-  return (
-    <group>
-      <mesh geometry={tubeGeo}>
-        <meshBasicMaterial color="#ffffff" opacity={0.9} transparent />
-      </mesh>
-      {/* Current position sphere */}
-      <mesh position={current}>
-        <sphereGeometry args={[0.08, 16, 16]} />
-        <meshBasicMaterial color="#ffffff" />
-      </mesh>
-      {/* Start marker */}
-      {points.length > 0 && (
-        <mesh position={points[0]}>
-          <sphereGeometry args={[0.06, 12, 12]} />
-          <meshBasicMaterial color="#f97316" />
-        </mesh>
-      )}
-    </group>
-  );
-}
-
-function RotatingScene({ heightmap, showPath }: { heightmap: number[][]; showPath: boolean }) {
-  const groupRef = useRef<THREE.Group>(null);
-
-  useFrame(({ clock }) => {
-    if (groupRef.current) {
-      groupRef.current.rotation.y = clock.getElapsedTime() * 0.05;
-    }
-  });
-
-  return (
-    <group ref={groupRef}>
-      <Terrain heightmap={heightmap} />
-      <WireframeTerrain heightmap={heightmap} />
-      <OptimizationPathLine heightmap={heightmap} showPath={showPath} />
-    </group>
-  );
+interface Props {
+  showPath?: boolean;
 }
 
 const LossLandscape = () => {
-  const heightmap = useMemo(() => generateHeightmap(), []);
-  const [showPath, setShowPath] = useState(false);
+  const chartData = useMemo(() => generateChartData(), []);
+  const [revealed, setRevealed] = useState(0);
+  const [animating, setAnimating] = useState(false);
+
+  const animateTrials = () => {
+    setRevealed(0);
+    setAnimating(true);
+  };
+
+  useEffect(() => {
+    if (!animating) return;
+    if (revealed >= observedPoints.length) {
+      setAnimating(false);
+      return;
+    }
+    const timer = setTimeout(() => setRevealed((r) => r + 1), 600);
+    return () => clearTimeout(timer);
+  }, [animating, revealed]);
+
+  const visiblePoints = animating
+    ? observedPoints.slice(0, revealed)
+    : observedPoints;
 
   return (
     <div className="space-y-4">
-      <div className="surface-elevated rounded-md overflow-hidden" style={{ height: 380 }}>
-        <Canvas
-          camera={{ position: [6, 5, 6], fov: 45 }}
-          style={{ background: "#0a0a0a" }}
-          gl={{ antialias: true }}
-        >
-          <ambientLight intensity={0.4} />
-          <directionalLight position={[5, 8, 5]} intensity={0.8} />
-          <directionalLight position={[-3, 5, -3]} intensity={0.3} />
-          <RotatingScene heightmap={heightmap} showPath={showPath} />
-          <OrbitControls
-            enableZoom={true}
-            enablePan={false}
-            minDistance={4}
-            maxDistance={14}
-            minPolarAngle={0.3}
-            maxPolarAngle={Math.PI / 2.2}
-          />
-        </Canvas>
+      <div className="surface-elevated rounded-md p-4 pb-2">
+        <p className="text-xs text-muted-foreground mb-1 font-medium uppercase tracking-wider">
+          Bayesian Optimization — GP Surrogate
+        </p>
+        <div style={{ height: 340 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart
+              data={chartData}
+              margin={{ top: 20, right: 20, bottom: 30, left: 20 }}
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="hsl(220 16% 85%)"
+                vertical={false}
+              />
+              <XAxis
+                dataKey="x"
+                type="number"
+                domain={[0, 1]}
+                ticks={[0, 0.2, 0.4, 0.6, 0.8, 1.0]}
+                tick={{ fontSize: 11, fill: "hsl(220 10% 50%)" }}
+                axisLine={{ stroke: "hsl(220 16% 80%)" }}
+                tickLine={{ stroke: "hsl(220 16% 80%)" }}
+                label={{
+                  value: "hyperparameter",
+                  position: "insideBottom",
+                  offset: -18,
+                  style: {
+                    fontSize: 12,
+                    fill: "hsl(220 10% 50%)",
+                  },
+                }}
+              />
+              <YAxis
+                domain={[0, 1]}
+                ticks={[0, 0.25, 0.5, 0.75, 1.0]}
+                tick={{ fontSize: 11, fill: "hsl(220 10% 50%)" }}
+                axisLine={{ stroke: "hsl(220 16% 80%)" }}
+                tickLine={{ stroke: "hsl(220 16% 80%)" }}
+                label={{
+                  value: "value",
+                  angle: -90,
+                  position: "insideLeft",
+                  offset: -5,
+                  style: {
+                    fontSize: 12,
+                    fill: "hsl(220 10% 50%)",
+                  },
+                }}
+              />
+              <Tooltip content={<CustomTooltip />} />
+
+              {/* Confidence interval band */}
+              <Area
+                dataKey="band"
+                type="monotone"
+                fill="hsl(222 47% 25% / 0.12)"
+                stroke="none"
+                isAnimationActive={false}
+              />
+
+              {/* GP mean line */}
+              <Line
+                dataKey="mean"
+                type="monotone"
+                stroke="hsl(222 47% 25%)"
+                strokeWidth={2.5}
+                dot={false}
+                isAnimationActive={false}
+              />
+
+              {/* Observed sample points */}
+              {visiblePoints.map((pt) => (
+                <ReferenceDot
+                  key={pt.label}
+                  x={pt.x}
+                  y={pt.y}
+                  r={5}
+                  fill="hsl(222 47% 25%)"
+                  stroke="hsl(0 0% 100%)"
+                  strokeWidth={2}
+                />
+              ))}
+
+              {/* Best point annotation */}
+              {visiblePoints.includes(bestPoint) && (
+                <ReferenceLine
+                  x={bestPoint.x}
+                  stroke="hsl(222 47% 25%)"
+                  strokeDasharray="4 4"
+                  strokeWidth={1}
+                  label={{
+                    value: "best observed value",
+                    position: "top",
+                    style: {
+                      fontSize: 11,
+                      fill: "hsl(222 47% 18%)",
+                      fontWeight: 500,
+                    },
+                  }}
+                />
+              )}
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#f97316]" />
-            Start position
+            <span className="w-5 h-[2.5px] rounded bg-primary inline-block" />
+            GP mean
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-white" />
-            Current position
+            <span className="w-3 h-3 rounded-full bg-primary/15 border border-primary/30 inline-block" />
+            Confidence interval
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-[2px] bg-white/80 rounded" />
-            Optimization path
+            <span className="w-2.5 h-2.5 rounded-full bg-primary inline-block" />
+            Observed values
           </div>
         </div>
         <button
-          onClick={() => setShowPath(!showPath)}
+          onClick={animateTrials}
           className="text-sm px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
         >
-          {showPath ? "Reset" : "Show optimal path"}
+          {animating ? "Running..." : "Replay trials"}
         </button>
       </div>
 
       <p className="text-xs text-muted-foreground">
-        3D loss landscape of your model's parameter space. Peaks represent high loss; valleys represent optimal configurations. 
-        Drag to rotate, scroll to zoom.
+        Bayesian Optimization uses a Gaussian Process surrogate to model the objective function. 
+        The shaded region shows the 95% confidence interval — wider bands indicate unexplored regions. 
+        Each trial evaluates a new hyperparameter configuration, balancing exploration and exploitation via an acquisition function.
       </p>
     </div>
   );

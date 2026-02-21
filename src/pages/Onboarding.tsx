@@ -1,10 +1,9 @@
-import { useState, useCallback, lazy, Suspense } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Upload, FileText, Info } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import DataCenterMap from "@/components/DataCenterMap";
-
-const LossLandscape = lazy(() => import("@/components/LossLandscape"));
+import LossLandscape from "@/components/LossLandscape";
 
 const categories = ["Classification", "Generation", "Ranking", "Extraction"];
 
@@ -288,17 +287,11 @@ const Onboarding = () => {
         {step === 4 && (
           <div className="space-y-8 animate-fade-in">
             <div>
-              <h2 className="text-2xl md:text-3xl font-semibold mb-2">Loss landscape preview</h2>
-              <p className="text-muted-foreground">Your model's optimization space. We'll find the best path through it.</p>
+              <h2 className="text-2xl md:text-3xl font-semibold mb-2">Hyperparameter search</h2>
+              <p className="text-muted-foreground">Bayesian Optimization finds optimal hyperparameters with fewer trials than grid or random search.</p>
             </div>
 
-            <Suspense fallback={
-              <div className="surface-elevated rounded-md flex items-center justify-center" style={{ height: 380 }}>
-                <p className="text-muted-foreground text-sm">Loading 3D visualization...</p>
-              </div>
-            }>
-              <LossLandscape />
-            </Suspense>
+            <LossLandscape />
 
             <div className="pt-4">
               <button onClick={nextStep} className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:opacity-90 transition-opacity">

@@ -1,7 +1,10 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Upload, FileText, Info } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import DataCenterMap from "@/components/DataCenterMap";
+
+const LossLandscape = lazy(() => import("@/components/LossLandscape"));
 
 const categories = ["Classification", "Generation", "Ranking", "Extraction"];
 
@@ -22,6 +25,8 @@ const configParams = [
   { label: "Est. training time", value: "~14 min", tip: "Based on single A100 GPU allocation" },
 ];
 
+const TOTAL_STEPS = 5;
+
 const Onboarding = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
@@ -31,7 +36,7 @@ const Onboarding = () => {
   const [overrideConfig, setOverrideConfig] = useState(false);
 
   const nextStep = useCallback(() => {
-    if (step < 2) setStep(step + 1);
+    if (step < TOTAL_STEPS - 1) setStep(step + 1);
     else navigate("/training");
   }, [step, navigate]);
 
@@ -49,14 +54,14 @@ const Onboarding = () => {
           Back
         </button>
         <div className="flex gap-1.5">
-          {[0, 1, 2].map((i) => (
+          {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
             <div key={i} className={`h-1 rounded-full transition-all duration-300 ${i === step ? "w-8 bg-primary" : i < step ? "w-4 bg-primary/50" : "w-4 bg-border"}`} />
           ))}
         </div>
-        <span className="text-sm text-muted-foreground">Step {step + 1}/3</span>
+        <span className="text-sm text-muted-foreground">Step {step + 1}/{TOTAL_STEPS}</span>
       </div>
 
-      <div className="max-w-2xl w-full mx-auto flex-1">
+      <div className={`${step === 3 || step === 4 ? "max-w-4xl" : "max-w-2xl"} w-full mx-auto flex-1 transition-all duration-300`}>
         {/* Step 0: Describe */}
         {step === 0 && (
           <div className="space-y-8 animate-fade-in">
@@ -198,6 +203,48 @@ const Onboarding = () => {
             >
               {overrideConfig ? "← Use defaults" : "Override settings →"}
             </button>
+
+            <div className="pt-4">
+              <button onClick={nextStep} className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:opacity-90 transition-opacity">
+                Continue <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Data Center Map */}
+        {step === 3 && (
+          <div className="space-y-8 animate-fade-in">
+            <div>
+              <h2 className="text-2xl md:text-3xl font-semibold mb-2">Compute allocation</h2>
+              <p className="text-muted-foreground">We've scheduled GPUs across our global infrastructure for your training job.</p>
+            </div>
+
+            <DataCenterMap />
+
+            <div className="pt-4">
+              <button onClick={nextStep} className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:opacity-90 transition-opacity">
+                Continue <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Loss Landscape */}
+        {step === 4 && (
+          <div className="space-y-8 animate-fade-in">
+            <div>
+              <h2 className="text-2xl md:text-3xl font-semibold mb-2">Loss landscape preview</h2>
+              <p className="text-muted-foreground">Your model's optimization space. We'll find the best path through it.</p>
+            </div>
+
+            <Suspense fallback={
+              <div className="surface-elevated rounded-md flex items-center justify-center" style={{ height: 380 }}>
+                <p className="text-muted-foreground text-sm">Loading 3D visualization...</p>
+              </div>
+            }>
+              <LossLandscape />
+            </Suspense>
 
             <div className="pt-4">
               <button onClick={nextStep} className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:opacity-90 transition-opacity">

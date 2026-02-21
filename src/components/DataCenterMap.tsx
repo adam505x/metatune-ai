@@ -1,125 +1,108 @@
 import { useState, useEffect, useMemo } from "react";
 
-interface DataCenter {
+// ---- Types matching backend /api/schedule response ----
+interface HourForecast {
+  hour: string;
+  carbon_gco2: number;
+}
+
+interface BackendDC {
   id: string;
-  name: string;
+  label: string;
   location: string;
   lat: number;
   lng: number;
-  gpus: number;
-  active: boolean;
-  load: number;
+  forecast: HourForecast[];
+  avg_carbon: number;
 }
 
-const dataCenters: DataCenter[] = [
-  { id: "us-east-1", name: "Virginia", location: "US East", lat: 37, lng: -79, gpus: 128, active: true, load: 72 },
-  { id: "us-west-2", name: "Oregon", location: "US West", lat: 44, lng: -120, gpus: 96, active: true, load: 45 },
-  { id: "eu-west-1", name: "Ireland", location: "EU West", lat: 53, lng: -8, gpus: 64, active: false, load: 0 },
-  { id: "eu-central-1", name: "Frankfurt", location: "EU Central", lat: 50, lng: 8, gpus: 80, active: true, load: 88 },
-  { id: "ap-northeast-1", name: "Tokyo", location: "Asia Pacific", lat: 36, lng: 140, gpus: 48, active: false, load: 0 },
-  { id: "ap-southeast-1", name: "Singapore", location: "SE Asia", lat: 1, lng: 104, gpus: 32, active: true, load: 61 },
-  { id: "us-central-1", name: "Iowa", location: "US Central", lat: 42, lng: -93, gpus: 112, active: true, load: 55 },
-  { id: "eu-north-1", name: "Stockholm", location: "EU North", lat: 59, lng: 18, gpus: 40, active: false, load: 0 },
-  { id: "sa-east-1", name: "São Paulo", location: "South America", lat: -23, lng: -47, gpus: 24, active: true, load: 33 },
+interface OptimalSchedule {
+  data_center_id: string;
+  data_center_name: string;
+  start_time: string;
+  total_co2_kg: number;
+  naive_co2_kg: number | null;
+  savings_pct: number;
+}
+
+// Fallback positions shown while the API loads
+const FALLBACK_DCS: BackendDC[] = [
+  { id: "crusoe-tx", label: "Abilene, TX",  location: "US Central", lat: 32.4487, lng: -99.7331, forecast: [], avg_carbon: 0 },
+  { id: "aws-va",    label: "Virginia, VA", location: "US East",    lat: 39.0438, lng: -77.4874, forecast: [], avg_carbon: 0 },
+  { id: "google-fi", label: "Hamina, FI",   location: "EU North",   lat: 60.5693, lng: 27.1938,  forecast: [], avg_carbon: 0 },
 ];
 
-// Simplified world continent outline as polygon coordinate sets
-// Each continent is an array of [lat, lng] boundary points
+// ---- World-map dot generation (unchanged) ----
 const WORLD_POINTS: [number, number][] = generateWorldDots();
 
 function generateWorldDots(): [number, number][] {
-  // Generate a dot-grid world map by defining continent bounding regions
-  // Each region: [latMin, latMax, lngMin, lngMax] with optional exclusions
   const continents: { bounds: [number, number, number, number]; exclude?: (lat: number, lng: number) => boolean }[] = [
-    // North America
     { bounds: [25, 70, -170, -55], exclude: (lat, lng) => {
-      // Hudson Bay area
       if (lat > 50 && lat < 65 && lng > -95 && lng < -75) return true;
-      // Cut off ocean areas - shape NA roughly
       if (lat < 30 && lng < -115) return true;
       if (lat > 60 && lng < -145) return true;
       if (lat < 28 && lng > -82) return true;
-      // Gulf of Mexico
       if (lat < 30 && lat > 25 && lng > -98 && lng < -82) return true;
       return false;
     }},
-    // Central America
     { bounds: [7, 25, -120, -77], exclude: (lat, lng) => {
       if (lat < 15 && lng < -105) return true;
       if (lat > 20 && lng < -105 && lng > -115) return lat > 22;
       if (lat < 10 && lng > -80) return true;
       return false;
     }},
-    // South America
     { bounds: [-56, 12, -82, -34], exclude: (lat, lng) => {
       if (lat > 5 && lng < -78) return true;
       if (lat < -45 && lng < -75) return true;
       if (lat > 8 && lng > -60) return true;
-      // Narrow the southern tip
       if (lat < -40 && lng > -65) return true;
       return false;
     }},
-    // Europe
     { bounds: [36, 71, -10, 40], exclude: (lat, lng) => {
-      // Mediterranean
       if (lat < 40 && lng > 20) return true;
       if (lat < 38 && lng > 0 && lng < 10) return true;
       return false;
     }},
-    // Africa
     { bounds: [-35, 37, -18, 52], exclude: (lat, lng) => {
       if (lat > 30 && lng > 35) return true;
       if (lat < -30 && lng < -10) return true;
       if (lat < -25 && lng > 35) return true;
-      // Gulf of Guinea indent
       if (lat > 0 && lat < 6 && lng > -5 && lng < 8) return true;
       return false;
     }},
-    // Asia (mainland)
     { bounds: [10, 75, 40, 180], exclude: (lat, lng) => {
-      // Arabian sea / Indian ocean
       if (lat < 25 && lng > 40 && lng < 68) return true;
-      // Bay of Bengal
       if (lat < 20 && lat > 5 && lng > 80 && lng < 95) return true;
       if (lat < 15 && lng > 100 && lng < 105) return true;
       return false;
     }},
-    // India
     { bounds: [8, 35, 68, 90], exclude: (lat, lng) => {
       if (lat < 12 && lng > 80) return true;
       if (lat > 30 && lng < 72) return true;
       return false;
     }},
-    // Australia
     { bounds: [-40, -11, 113, 154], exclude: (lat, lng) => {
       if (lat > -15 && lng < 130) return true;
       if (lat < -38 && lng > 148) return true;
       return false;
     }},
-    // UK / Ireland
     { bounds: [50, 59, -11, 2] },
-    // Japan
     { bounds: [30, 46, 129, 146] },
-    // Indonesia (simplified)
     { bounds: [-8, 6, 95, 140], exclude: (lat, lng) => {
-      // Only islands, very rough
       if (lat > 2 && lng > 120) return true;
       if (lat < -5 && lng < 105) return true;
       return false;
     }},
-    // New Zealand
     { bounds: [-47, -34, 166, 179] },
-    // Greenland
     { bounds: [60, 84, -55, -15], exclude: (lat, lng) => {
       if (lat < 65 && lng < -45) return true;
       return false;
     }},
-    // Alaska
     { bounds: [55, 72, -170, -140] },
   ];
 
   const dots: [number, number][] = [];
-  const step = 3; // Degree spacing for dot density
+  const step = 3;
 
   for (let lat = -60; lat <= 85; lat += step) {
     for (let lng = -180; lng <= 180; lng += step) {
@@ -134,59 +117,78 @@ function generateWorldDots(): [number, number][] {
       }
     }
   }
-
   return dots;
 }
 
-// Convert lat/lng to SVG x/y using Mercator-like projection
-function toSvg(lat: number, lng: number, width: number, height: number): { x: number; y: number } {
-  const x = ((lng + 180) / 360) * width;
-  const y = ((90 - lat) / 180) * height;
-  return { x, y };
+function toSvg(lat: number, lng: number, width: number, height: number) {
+  return { x: ((lng + 180) / 360) * width, y: ((90 - lat) / 180) * height };
 }
 
+function carbonColor(gco2: number): string {
+  if (gco2 < 30) return "bg-emerald-500/70";
+  if (gco2 < 60) return "bg-amber-400/70";
+  return "bg-red-400/70";
+}
+
+// ---- Main component ----
 const DataCenterMap = () => {
   const [selected, setSelected] = useState<string | null>(null);
   const [pulsePhase, setPulsePhase] = useState(0);
+  const [dataCenters, setDataCenters] = useState<BackendDC[]>(FALLBACK_DCS);
+  const [optimal, setOptimal] = useState<OptimalSchedule | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const interval = setInterval(() => setPulsePhase((p) => (p + 1) % 100), 80);
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    fetch("/api/schedule?job_hours=4&job_power_kw=15&deadline_hours=22")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.data_centers?.length) setDataCenters(data.data_centers);
+        setOptimal(data.optimal ?? null);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
   const svgWidth = 800;
   const svgHeight = 450;
   const dotRadius = 2.2;
 
-  const worldDots = useMemo(() =>
-    WORLD_POINTS.map(([lat, lng]) => toSvg(lat, lng, svgWidth, svgHeight)),
+  const worldDots = useMemo(
+    () => WORLD_POINTS.map(([lat, lng]) => toSvg(lat, lng, svgWidth, svgHeight)),
     []
   );
 
-  const dcPositions = useMemo(() =>
-    dataCenters.map(dc => ({
-      ...dc,
-      ...toSvg(dc.lat, dc.lng, svgWidth, svgHeight),
-    })),
-    []
+  const dcPositions = useMemo(
+    () => dataCenters.map((dc) => ({ ...dc, ...toSvg(dc.lat, dc.lng, svgWidth, svgHeight) })),
+    [dataCenters]
   );
 
-  const activeCenters = dataCenters.filter((dc) => dc.active);
-  const totalGpus = activeCenters.reduce((sum, dc) => sum + dc.gpus, 0);
+  const selectedDC = dataCenters.find((d) => d.id === selected);
 
   return (
     <div className="space-y-6">
       {/* Stats bar */}
-      <div className="flex items-center gap-6 text-sm">
+      <div className="flex items-center gap-4 text-sm flex-wrap">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           <span className="text-muted-foreground">
-            <span className="text-foreground font-medium">{activeCenters.length}</span> active regions
+            <span className="text-foreground font-medium">{dataCenters.length}</span> active regions
           </span>
         </div>
-        <div className="text-muted-foreground">
-          <span className="text-foreground font-medium">{totalGpus}</span> GPUs allocated
-        </div>
+        {optimal && (
+          <div className="flex items-center gap-2 text-xs font-medium text-amber-400">
+            <span>Optimal: {optimal.data_center_name} @ {optimal.start_time}</span>
+            <span className="bg-amber-400/15 px-2 py-0.5 rounded-full">↓{optimal.savings_pct}% CO₂</span>
+          </div>
+        )}
+        {loading && (
+          <span className="text-xs text-muted-foreground animate-pulse">Fetching live carbon data…</span>
+        )}
       </div>
 
       {/* SVG World Map */}
@@ -196,66 +198,27 @@ const DataCenterMap = () => {
           className="w-full h-auto"
           style={{ background: "hsl(var(--sidebar-background))" }}
         >
-          {/* Continent dots */}
           {worldDots.map((dot, i) => (
-            <circle
-              key={i}
-              cx={dot.x}
-              cy={dot.y}
-              r={dotRadius}
-              fill="hsl(var(--sidebar-border))"
-              opacity={0.5}
-            />
+            <circle key={i} cx={dot.x} cy={dot.y} r={dotRadius} fill="hsl(var(--sidebar-border))" opacity={0.5} />
           ))}
 
-          {/* Data center markers */}
           {dcPositions.map((dc) => {
-            const isActive = dc.active;
+            const isOptimal = dc.id === optimal?.data_center_id;
             const isSelected = dc.id === selected;
-            const pulse = isActive ? 0.6 + Math.sin((pulsePhase + dc.lat) * 0.15) * 0.4 : 1;
+            const pulse = 0.6 + Math.sin((pulsePhase + dc.lat) * 0.15) * 0.4;
+            const color = isOptimal ? "hsl(45 100% 55%)" : "hsl(160 60% 45%)";
 
             return (
-              <g key={dc.id} onClick={() => setSelected(dc.id === selected ? null : dc.id)} className="cursor-pointer">
-                {/* Glow ring for active */}
-                {isActive && (
-                  <circle
-                    cx={dc.x}
-                    cy={dc.y}
-                    r={14}
-                    fill="none"
-                    stroke="hsl(160 60% 45%)"
-                    strokeWidth={1}
-                    opacity={pulse * 0.4}
-                  />
-                )}
-                {isActive && (
-                  <circle
-                    cx={dc.x}
-                    cy={dc.y}
-                    r={8}
-                    fill="hsl(160 60% 45% / 0.15)"
-                    opacity={pulse}
-                  />
-                )}
-                {/* Center dot */}
-                <circle
-                  cx={dc.x}
-                  cy={dc.y}
-                  r={isSelected ? 5 : 4}
-                  fill={isActive ? "hsl(160 60% 45%)" : "hsl(var(--muted-foreground))"}
-                  opacity={isActive ? pulse : 0.4}
-                />
+              <g
+                key={dc.id}
+                onClick={() => setSelected(dc.id === selected ? null : dc.id)}
+                className="cursor-pointer"
+              >
+                <circle cx={dc.x} cy={dc.y} r={14} fill="none" stroke={color} strokeWidth={1} opacity={pulse * 0.4} />
+                <circle cx={dc.x} cy={dc.y} r={8} fill={`${color}26`} opacity={pulse} />
+                <circle cx={dc.x} cy={dc.y} r={isSelected ? 5 : 4} fill={color} opacity={pulse} />
                 {isSelected && (
-                  <circle
-                    cx={dc.x}
-                    cy={dc.y}
-                    r={18}
-                    fill="none"
-                    stroke="hsl(160 60% 50%)"
-                    strokeWidth={1.5}
-                    strokeDasharray="3 3"
-                    opacity={0.7}
-                  />
+                  <circle cx={dc.x} cy={dc.y} r={18} fill="none" stroke={color} strokeWidth={1.5} strokeDasharray="3 3" opacity={0.7} />
                 )}
               </g>
             );
@@ -264,17 +227,17 @@ const DataCenterMap = () => {
       </div>
 
       {/* Selected detail or legend */}
-      {selected ? (
-        <SelectedDetail dc={dataCenters.find((d) => d.id === selected)!} />
+      {selectedDC ? (
+        <SelectedDetail dc={selectedDC} isOptimal={selectedDC.id === optimal?.data_center_id} />
       ) : (
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            Active
+            <span className="w-2 h-2 rounded-full bg-amber-400" />
+            MILP Optimal
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-muted-foreground/40" />
-            Idle
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            Active
           </div>
           <span className="ml-auto">Click a region for details</span>
         </div>
@@ -282,66 +245,99 @@ const DataCenterMap = () => {
 
       {/* Scheduler timeline */}
       <div className="space-y-3">
-        <p className="text-sm font-medium text-foreground">GPU Scheduler</p>
+        <p className="text-sm font-medium text-foreground">Carbon Intensity Forecast (next 12h)</p>
         <div className="space-y-2">
-          {activeCenters.map((dc, idx) => (
-            <div key={dc.id} className="flex items-center gap-3">
-              <span className="text-xs text-muted-foreground w-20 truncate">{dc.name}</span>
-              <div className="flex-1 h-6 bg-border/30 rounded-sm overflow-hidden flex">
-                {Array.from({ length: 8 }).map((_, i) => {
-                  // Deterministic "random" based on index
-                  const seed = (idx * 8 + i) * 2654435761;
-                  const isScheduled = (seed % 100) > 35;
-                  const width = 8 + (seed % 10);
-                  return (
-                    <div
-                      key={i}
-                      className={`h-full border-r border-background/50 transition-colors ${
-                        isScheduled ? "bg-emerald-500/70" : "bg-transparent"
-                      }`}
-                      style={{ width: `${width}%` }}
-                    />
-                  );
-                })}
+          {dataCenters.map((dc) => {
+            const hours = dc.forecast.slice(0, 12);
+            const isOptimal = dc.id === optimal?.data_center_id;
+            return (
+              <div key={dc.id} className="flex items-center gap-3">
+                <span className={`text-xs w-20 truncate ${isOptimal ? "text-amber-400 font-medium" : "text-muted-foreground"}`}>
+                  {dc.label}
+                </span>
+                <div className="flex-1 h-6 bg-border/30 rounded-sm overflow-hidden flex">
+                  {hours.length > 0
+                    ? hours.map((h, i) => (
+                        <div
+                          key={i}
+                          className={`h-full flex-1 border-r border-background/50 ${carbonColor(h.carbon_gco2)}`}
+                          title={`${h.hour}: ${h.carbon_gco2} gCO₂/kWh`}
+                        />
+                      ))
+                    : Array.from({ length: 12 }).map((_, i) => (
+                        <div key={i} className="h-full flex-1 border-r border-background/50 bg-border/20 animate-pulse" />
+                      ))}
+                </div>
+                <span className="text-xs font-mono text-muted-foreground w-16 text-right">
+                  {dc.avg_carbon > 0 ? `${dc.avg_carbon} g` : "—"}
+                </span>
               </div>
-              <span className="text-xs font-mono text-muted-foreground w-10 text-right">{dc.load}%</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
-        <div className="flex justify-between text-[10px] text-muted-foreground">
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
           <span>Now</span>
-          <span>+15 min (est. completion)</span>
+          <div className="flex gap-3">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-sm bg-emerald-500/70" />Low
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-sm bg-amber-400/70" />Med
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-sm bg-red-400/70" />High
+            </span>
+          </div>
+          <span>+12h</span>
         </div>
       </div>
+
+      {/* MILP savings summary */}
+      {optimal && (
+        <div className="surface-elevated rounded-md px-5 py-3 flex items-center justify-between text-xs">
+          <span className="text-muted-foreground">Green scheduler saves</span>
+          <div className="flex items-center gap-4">
+            {optimal.naive_co2_kg != null && (
+              <span className="text-muted-foreground font-mono line-through">{optimal.naive_co2_kg} kg CO₂</span>
+            )}
+            <span className="text-emerald-500 font-mono font-medium">{optimal.total_co2_kg} kg CO₂</span>
+            <span className="text-amber-400 font-medium">↓{optimal.savings_pct}% saved</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-const SelectedDetail = ({ dc }: { dc: DataCenter }) => (
+const SelectedDetail = ({ dc, isOptimal }: { dc: BackendDC; isOptimal: boolean }) => (
   <div className="surface-elevated rounded-md px-5 py-4 animate-fade-in">
     <div className="flex items-center justify-between">
       <div>
-        <p className="font-medium text-foreground">{dc.name}</p>
-        <p className="text-sm text-muted-foreground">{dc.location} · {dc.id}</p>
+        <p className="font-medium text-foreground flex items-center gap-2">
+          {dc.label}
+          {isOptimal && (
+            <span className="text-xs bg-amber-400/20 text-amber-400 px-2 py-0.5 rounded-full">MILP Optimal</span>
+          )}
+        </p>
+        <p className="text-sm text-muted-foreground">{dc.location}</p>
       </div>
       <div className="flex items-center gap-6 text-sm">
         <div>
-          <p className="text-muted-foreground">GPUs</p>
-          <p className="font-mono font-medium text-foreground">{dc.gpus}</p>
+          <p className="text-muted-foreground text-xs">Avg Carbon</p>
+          <p className="font-mono font-medium text-foreground">
+            {dc.avg_carbon > 0 ? `${dc.avg_carbon} g/kWh` : "—"}
+          </p>
         </div>
         <div>
-          <p className="text-muted-foreground">Load</p>
-          <div className="flex items-center gap-2">
-            <div className="w-16 h-1.5 bg-border rounded-full overflow-hidden">
-              <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${dc.load}%` }} />
-            </div>
-            <span className="font-mono text-foreground text-xs">{dc.load}%</span>
-          </div>
+          <p className="text-muted-foreground text-xs">Next hour</p>
+          <p className="font-mono font-medium text-foreground">
+            {dc.forecast[0] ? `${dc.forecast[0].carbon_gco2} g` : "—"}
+          </p>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className={`w-2 h-2 rounded-full ${dc.active ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
-          <span className={dc.active ? "text-emerald-600" : "text-muted-foreground"}>
-            {dc.active ? "Allocated" : "Idle"}
+          <span className={`w-2 h-2 rounded-full ${isOptimal ? "bg-amber-400" : "bg-emerald-500"}`} />
+          <span className={isOptimal ? "text-amber-400" : "text-emerald-600"}>
+            {isOptimal ? "Recommended" : "Active"}
           </span>
         </div>
       </div>

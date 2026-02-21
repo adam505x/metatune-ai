@@ -147,32 +147,32 @@ const Training = () => {
             <h4 className="text-sm font-medium text-muted-foreground mb-4">Training Loss</h4>
             <ResponsiveContainer width="100%" height="85%">
               <LineChart data={lossData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 15%)" />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(220 16% 85%)" />
                 <XAxis
                   dataKey="step"
-                  stroke="hsl(0 0% 30%)"
-                  tick={{ fill: "hsl(0 0% 45%)", fontSize: 12 }}
+                  stroke="hsl(220 16% 80%)"
+                  tick={{ fill: "hsl(220 10% 50%)", fontSize: 12 }}
                   tickLine={false}
                 />
                 <YAxis
-                  stroke="hsl(0 0% 30%)"
-                  tick={{ fill: "hsl(0 0% 45%)", fontSize: 12 }}
+                  stroke="hsl(220 16% 80%)"
+                  tick={{ fill: "hsl(220 10% 50%)", fontSize: 12 }}
                   tickLine={false}
                   domain={[0, 3]}
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "hsl(0 0% 7%)",
-                    border: "1px solid hsl(0 0% 15%)",
+                    backgroundColor: "hsl(0 0% 100%)",
+                    border: "1px solid hsl(220 16% 85%)",
                     borderRadius: "6px",
-                    color: "hsl(0 0% 93%)",
+                    color: "hsl(222 47% 18%)",
                     fontSize: 13,
                   }}
                 />
                 <Line
                   type="monotone"
                   dataKey="loss"
-                  stroke="hsl(25 95% 53%)"
+                  stroke="hsl(222 47% 25%)"
                   strokeWidth={2}
                   dot={false}
                   animationDuration={300}

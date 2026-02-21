@@ -1,4 +1,15 @@
 import { useState, useEffect, useMemo } from "react";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  Area,
+  ComposedChart,
+} from "recharts";
 
 // ---- Types matching backend /api/schedule response ----
 interface HourForecast {
@@ -131,12 +142,53 @@ function carbonColor(gco2: number): string {
 }
 
 // ---- Main component ----
+// Generate animated training loss curve data
+function generateTrainingLossData(epoch: number) {
+  const data: { step: number; loss: number; valLoss: number }[] = [];
+  for (let i = 0; i <= epoch; i++) {
+    const t = i / 200;
+    const loss = 2.8 * Math.exp(-3.5 * t) + 0.15 + 0.08 * Math.sin(i * 0.3) * Math.exp(-2 * t);
+    const valLoss = 2.9 * Math.exp(-3.2 * t) + 0.22 + 0.12 * Math.sin(i * 0.25 + 0.5) * Math.exp(-1.8 * t);
+    data.push({ step: i, loss: Math.max(0.12, loss), valLoss: Math.max(0.18, valLoss) });
+  }
+  return data;
+}
+
+const LossTooltip = ({ active, payload }: any) => {
+  if (!active || !payload?.length) return null;
+  const d = payload[0]?.payload;
+  if (!d) return null;
+  return (
+    <div className="bg-card border border-border rounded-md px-3 py-2 shadow-md text-xs">
+      <p className="text-foreground font-medium">Step {d.step}</p>
+      <p className="text-muted-foreground">Train: <span className="font-mono text-foreground">{d.loss.toFixed(4)}</span></p>
+      <p className="text-muted-foreground">Val: <span className="font-mono text-foreground">{d.valLoss.toFixed(4)}</span></p>
+    </div>
+  );
+};
+
 const DataCenterMap = () => {
   const [selected, setSelected] = useState<string | null>(null);
   const [pulsePhase, setPulsePhase] = useState(0);
   const [dataCenters, setDataCenters] = useState<BackendDC[]>(FALLBACK_DCS);
   const [optimal, setOptimal] = useState<OptimalSchedule | null>(null);
   const [loading, setLoading] = useState(true);
+  const [trainingStep, setTrainingStep] = useState(0);
+  const [isTraining, setIsTraining] = useState(true);
+
+  // Animate the training loss curve
+  useEffect(() => {
+    if (!isTraining) return;
+    if (trainingStep >= 200) {
+      setIsTraining(false);
+      return;
+    }
+    const timer = setTimeout(() => setTrainingStep((s) => Math.min(s + 2, 200)), 40);
+    return () => clearTimeout(timer);
+  }, [isTraining, trainingStep]);
+
+  const lossData = useMemo(() => generateTrainingLossData(trainingStep), [trainingStep]);
+  const currentLoss = lossData.length > 0 ? lossData[lossData.length - 1] : null;
 
   useEffect(() => {
     const interval = setInterval(() => setPulsePhase((p) => (p + 1) % 100), 80);
@@ -153,20 +205,6 @@ const DataCenterMap = () => {
       })
       .catch(() => setLoading(false));
   }, []);
-
-  const svgWidth = 800;
-  const svgHeight = 450;
-  const dotRadius = 2.2;
-
-  const worldDots = useMemo(
-    () => WORLD_POINTS.map(([lat, lng]) => toSvg(lat, lng, svgWidth, svgHeight)),
-    []
-  );
-
-  const dcPositions = useMemo(
-    () => dataCenters.map((dc) => ({ ...dc, ...toSvg(dc.lat, dc.lng, svgWidth, svgHeight) })),
-    [dataCenters]
-  );
 
   const selectedDC = dataCenters.find((d) => d.id === selected);
 
@@ -191,39 +229,82 @@ const DataCenterMap = () => {
         )}
       </div>
 
-      {/* SVG World Map */}
-      <div className="surface-elevated rounded-md p-4 overflow-hidden">
-        <svg
-          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-          className="w-full h-auto"
-          style={{ background: "hsl(var(--sidebar-background))" }}
-        >
-          {worldDots.map((dot, i) => (
-            <circle key={i} cx={dot.x} cy={dot.y} r={dotRadius} fill="hsl(var(--sidebar-border))" opacity={0.5} />
-          ))}
-
-          {dcPositions.map((dc) => {
-            const isOptimal = dc.id === optimal?.data_center_id;
-            const isSelected = dc.id === selected;
-            const pulse = 0.6 + Math.sin((pulsePhase + dc.lat) * 0.15) * 0.4;
-            const color = isOptimal ? "hsl(45 100% 55%)" : "hsl(160 60% 45%)";
-
-            return (
-              <g
-                key={dc.id}
-                onClick={() => setSelected(dc.id === selected ? null : dc.id)}
-                className="cursor-pointer"
-              >
-                <circle cx={dc.x} cy={dc.y} r={14} fill="none" stroke={color} strokeWidth={1} opacity={pulse * 0.4} />
-                <circle cx={dc.x} cy={dc.y} r={8} fill={`${color}26`} opacity={pulse} />
-                <circle cx={dc.x} cy={dc.y} r={isSelected ? 5 : 4} fill={color} opacity={pulse} />
-                {isSelected && (
-                  <circle cx={dc.x} cy={dc.y} r={18} fill="none" stroke={color} strokeWidth={1.5} strokeDasharray="3 3" opacity={0.7} />
-                )}
-              </g>
-            );
-          })}
-        </svg>
+      {/* Training Loss Curve */}
+      <div className="surface-elevated rounded-md p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+            Training Loss — Live
+          </p>
+          <div className="flex items-center gap-4 text-xs">
+            {currentLoss && (
+              <>
+                <span className="text-muted-foreground">
+                  Train: <span className="font-mono text-foreground font-medium">{currentLoss.loss.toFixed(4)}</span>
+                </span>
+                <span className="text-muted-foreground">
+                  Val: <span className="font-mono text-foreground font-medium">{currentLoss.valLoss.toFixed(4)}</span>
+                </span>
+                <span className="text-muted-foreground">
+                  Step: <span className="font-mono text-foreground font-medium">{trainingStep}/200</span>
+                </span>
+              </>
+            )}
+            {isTraining && (
+              <span className="flex items-center gap-1.5 text-emerald-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Training
+              </span>
+            )}
+          </div>
+        </div>
+        <div style={{ height: 300 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={lossData} margin={{ top: 10, right: 20, bottom: 30, left: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(220 16% 85%)" vertical={false} />
+              <XAxis
+                dataKey="step"
+                type="number"
+                domain={[0, 200]}
+                ticks={[0, 50, 100, 150, 200]}
+                tick={{ fontSize: 11, fill: "hsl(220 10% 50%)" }}
+                axisLine={{ stroke: "hsl(220 16% 80%)" }}
+                tickLine={{ stroke: "hsl(220 16% 80%)" }}
+                label={{ value: "training step", position: "insideBottom", offset: -18, style: { fontSize: 12, fill: "hsl(220 10% 50%)" } }}
+              />
+              <YAxis
+                domain={[0, 3.2]}
+                ticks={[0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]}
+                tick={{ fontSize: 11, fill: "hsl(220 10% 50%)" }}
+                axisLine={{ stroke: "hsl(220 16% 80%)" }}
+                tickLine={{ stroke: "hsl(220 16% 80%)" }}
+                label={{ value: "loss", angle: -90, position: "insideLeft", offset: -5, style: { fontSize: 12, fill: "hsl(220 10% 50%)" } }}
+              />
+              <RechartsTooltip content={<LossTooltip />} />
+              <Line dataKey="loss" type="monotone" stroke="hsl(222 47% 25%)" strokeWidth={2} dot={false} isAnimationActive={false} />
+              <Line dataKey="valLoss" type="monotone" stroke="hsl(222 47% 25% / 0.4)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="flex items-center justify-between mt-2">
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              <span className="w-5 h-[2px] rounded bg-primary inline-block" />
+              Train loss
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-5 h-[2px] rounded bg-primary/40 inline-block border-t border-dashed border-primary/40" />
+              Val loss
+            </div>
+          </div>
+          {!isTraining && (
+            <button
+              onClick={() => { setTrainingStep(0); setIsTraining(true); }}
+              className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
+            >
+              Replay
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Selected detail or legend */}

@@ -25,6 +25,23 @@ const configParams = [
   { label: "Est. training time", value: "~14 min", tip: "Based on single A100 GPU allocation" },
 ];
 
+const advancedParams = [
+  { label: "Optimizer", value: "AdamW", tip: "Adam with decoupled weight decay, standard for transformer fine-tuning" },
+  { label: "Weight decay", value: "0.01", tip: "L2 regularization to prevent overfitting on small datasets" },
+  { label: "Warmup steps", value: "100", tip: "Gradual LR ramp-up to stabilize early training" },
+  { label: "LR scheduler", value: "Cosine", tip: "Cosine annealing smoothly decays LR for better convergence" },
+  { label: "Max seq length", value: "512", tip: "Truncates inputs beyond this token count to fit GPU memory" },
+  { label: "Gradient accumulation", value: "4", tip: "Simulates larger batch sizes without extra VRAM" },
+  { label: "Mixed precision", value: "bf16", tip: "Brain float16 halves memory usage with minimal accuracy loss" },
+  { label: "LoRA rank", value: "16", tip: "Low-rank adaptation rank — higher means more capacity but slower" },
+  { label: "LoRA alpha", value: "32", tip: "Scaling factor for LoRA; typically 2× the rank" },
+  { label: "Dropout", value: "0.05", tip: "Light dropout on LoRA layers to reduce overfitting" },
+  { label: "Gradient clipping", value: "1.0", tip: "Caps gradient norm to prevent exploding gradients" },
+  { label: "Eval strategy", value: "steps", tip: "Evaluate every N steps rather than every epoch" },
+  { label: "Eval steps", value: "50", tip: "Run evaluation metrics every 50 training steps" },
+  { label: "Save strategy", value: "best", tip: "Only save the checkpoint with the lowest validation loss" },
+];
+
 const TOTAL_STEPS = 5;
 
 const Onboarding = () => {
@@ -34,6 +51,7 @@ const Onboarding = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [fileUploaded, setFileUploaded] = useState(false);
   const [overrideConfig, setOverrideConfig] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const nextStep = useCallback(() => {
     if (step < TOTAL_STEPS - 1) setStep(step + 1);
@@ -197,12 +215,48 @@ const Onboarding = () => {
               ))}
             </div>
 
-            <button
-              onClick={() => setOverrideConfig(!overrideConfig)}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {overrideConfig ? "← Use defaults" : "Override settings →"}
-            </button>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setOverrideConfig(!overrideConfig)}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {overrideConfig ? "← Use defaults" : "Override settings →"}
+              </button>
+              <button
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {showAdvanced ? "Hide advanced ↑" : "Advanced parameters ↓"}
+              </button>
+            </div>
+
+            {showAdvanced && (
+              <div className="surface-elevated rounded-md divide-y divide-border animate-fade-in">
+                {advancedParams.map((param) => (
+                  <div key={param.label} className="flex items-center justify-between px-5 py-3.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-secondary-foreground text-sm">{param.label}</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs">
+                          <p className="text-xs">{param.tip}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    {overrideConfig ? (
+                      <input
+                        defaultValue={param.value}
+                        className="bg-background border border-border rounded px-3 py-1 text-sm text-foreground w-36 text-right focus:outline-none focus:ring-1 focus:ring-primary/50"
+                      />
+                    ) : (
+                      <span className="font-mono text-sm text-foreground">{param.value}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="pt-4">
               <button onClick={nextStep} className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:opacity-90 transition-opacity">

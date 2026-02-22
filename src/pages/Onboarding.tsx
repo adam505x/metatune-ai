@@ -1,9 +1,9 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Upload, FileText, Info, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Upload, FileText, Info, Sparkles, Zap, Leaf } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import DataCenterMap from "@/components/DataCenterMap";
-import LossLandscape from "@/components/LossLandscape";
+import GreenEnergyBackground from "@/components/GreenEnergyBackground";
 
 const categories = ["Classification", "Generation", "Ranking", "Extraction"];
 
@@ -65,36 +65,107 @@ const defaultRanges: Record<string, { min: string; max: string }> = {
   "Dropout": { min: "0.0", max: "0.1" },
 };
 
-// ── Recommended config (shown after search space or skip) ─────────────────────
+// ── GP surrogate data & scatter plots ────────────────────────────────────────
 
-const configParams = [
-  { label: "Base model", value: "nanoGPT", tip: "Lightweight GPT implementation, fast to fine-tune on consumer hardware" },
-  { label: "Learning rate", value: "2e-5", tip: "Conservative rate to prevent catastrophic forgetting" },
-  { label: "Batch size", value: "16", tip: "Optimized for your dataset's average sequence length" },
-  { label: "Epochs", value: "3", tip: "Sufficient for convergence on ~5k samples" },
-  { label: "Est. training time", value: "~14 min", tip: "Based on single A100 GPU allocation" },
-];
+interface GPRow {
+  lora_r: number;
+  learning_rate: number;
+  lora_dropout: number;
+  batch_size: number;
+  predicted_loss: number;
+}
 
-const advancedParams = [
-  { label: "Optimizer", value: "AdamW", tip: "Adam with decoupled weight decay, standard for transformer fine-tuning" },
-  { label: "Weight decay", value: "0.01", tip: "L2 regularization to prevent overfitting on small datasets" },
-  { label: "Warmup steps", value: "100", tip: "Gradual LR ramp-up to stabilize early training" },
-  { label: "LR scheduler", value: "Cosine", tip: "Cosine annealing smoothly decays LR for better convergence" },
-  { label: "Max seq length", value: "512", tip: "Truncates inputs beyond this token count to fit GPU memory" },
-  { label: "Gradient accumulation", value: "4", tip: "Simulates larger batch sizes without extra VRAM" },
-  { label: "Mixed precision", value: "bf16", tip: "Brain float16 halves memory usage with minimal accuracy loss" },
-  { label: "LoRA rank", value: "16", tip: "Low-rank adaptation rank — higher means more capacity but slower" },
-  { label: "LoRA alpha", value: "32", tip: "Scaling factor for LoRA; typically 2× the rank" },
-  { label: "Dropout", value: "0.05", tip: "Light dropout on LoRA layers to reduce overfitting" },
-  { label: "Gradient clipping", value: "1.0", tip: "Caps gradient norm to prevent exploding gradients" },
-  { label: "Eval strategy", value: "steps", tip: "Evaluate every N steps rather than every epoch" },
-  { label: "Eval steps", value: "50", tip: "Run evaluation metrics every 50 training steps" },
-  { label: "Save strategy", value: "best", tip: "Only save the checkpoint with the lowest validation loss" },
-];
+function parseGPCSV(text: string): GPRow[] {
+  const lines = text.trim().split("\n");
+  return lines.slice(1).map((line) => {
+    const [lora_r, learning_rate, lora_dropout, batch_size, predicted_loss] = line.split(",").map(Number);
+    return { lora_r, learning_rate, lora_dropout, batch_size, predicted_loss };
+  });
+}
+
+function formatParam(key: keyof GPRow, value: number): string {
+  if (key === "learning_rate") return value.toExponential(2);
+  if (key === "lora_dropout") return value.toFixed(3);
+  return String(Math.round(value));
+}
+
+interface ScatterPlotProps {
+  data: GPRow[];
+  xKey: keyof GPRow;
+  xLabel: string;
+  bestIdx: number;
+}
+
+const ScatterPlot = ({ data, xKey, xLabel, bestIdx }: ScatterPlotProps) => {
+  const W = 320, H = 220, PAD = { top: 14, right: 14, bottom: 40, left: 48 };
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
+
+  const xs = data.map((d) => d[xKey] as number);
+  const ys = data.map((d) => d.predicted_loss);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const yMin = Math.min(...ys) - 0.05, yMax = Math.max(...ys) + 0.05;
+
+  const px = (v: number) => PAD.left + ((v - xMin) / (xMax - xMin || 1)) * plotW;
+  const py = (v: number) => PAD.top + (1 - (v - yMin) / (yMax - yMin || 1)) * plotH;
+
+  const yTicks = Array.from({ length: 4 }, (_, i) => yMin + (i / 3) * (yMax - yMin));
+  const xTicks = Array.from({ length: 4 }, (_, i) => xMin + (i / 3) * (xMax - xMin));
+
+  return (
+    <div className="surface-elevated rounded-md p-3">
+      <p className="text-xs text-muted-foreground mb-2 text-center">{xLabel}</p>
+      <svg width={W} height={H} className="w-full h-auto">
+        {/* Grid lines */}
+        {yTicks.map((t, i) => (
+          <line key={i} x1={PAD.left} x2={W - PAD.right} y1={py(t)} y2={py(t)} stroke="hsl(var(--border))" strokeWidth={0.5} />
+        ))}
+        {/* Y axis ticks */}
+        {yTicks.map((t, i) => (
+          <text key={i} x={PAD.left - 4} y={py(t) + 3} textAnchor="end" fontSize={8} fill="hsl(var(--muted-foreground))">
+            {t.toFixed(2)}
+          </text>
+        ))}
+        {/* X axis ticks */}
+        {xTicks.map((t, i) => (
+          <text key={i} x={px(t)} y={H - PAD.bottom + 12} textAnchor="middle" fontSize={8} fill="hsl(var(--muted-foreground))">
+            {xKey === "learning_rate"
+              ? t.toExponential(1)
+              : xKey === "batch_size" || xKey === "lora_r"
+              ? String(Math.round(t))
+              : t.toFixed(2)}
+          </text>
+        ))}
+        {/* Axes */}
+        <line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={H - PAD.bottom} stroke="hsl(var(--border))" strokeWidth={1} />
+        <line x1={PAD.left} x2={W - PAD.right} y1={H - PAD.bottom} y2={H - PAD.bottom} stroke="hsl(var(--border))" strokeWidth={1} />
+        {/* Y axis label */}
+        <text x={10} y={PAD.top + plotH / 2} textAnchor="middle" fontSize={8} fill="hsl(var(--muted-foreground))" transform={`rotate(-90, 10, ${PAD.top + plotH / 2})`}>
+          Predicted loss
+        </text>
+        {/* Data points */}
+        {data.map((d, i) => {
+          const isBest = i === bestIdx;
+          return (
+            <circle
+              key={i}
+              cx={px(d[xKey] as number)}
+              cy={py(d.predicted_loss)}
+              r={isBest ? 5 : 3}
+              fill={isBest ? "hsl(160 60% 45%)" : "hsl(var(--primary) / 0.4)"}
+              stroke={isBest ? "hsl(160 60% 65%)" : "none"}
+              strokeWidth={isBest ? 1.5 : 0}
+            />
+          );
+        })}
+      </svg>
+    </div>
+  );
+};
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 5;
 
 const Onboarding = () => {
   const navigate = useNavigate();
@@ -112,6 +183,24 @@ const Onboarding = () => {
   const [catSelections, setCatSelections] = useState<Record<string, string[]>>(defaultCategoricalSelections);
   const [ranges, setRanges] = useState<Record<string, { min: string; max: string }>>(defaultRanges);
 
+
+  // Step 4 — scheduling
+  const [deadline, setDeadline] = useState("");
+
+  // Step 3 — GP surrogate data
+  const [gpData, setGpData] = useState<GPRow[]>([]);
+
+  useEffect(() => {
+    fetch("/gp_surrogate_param_space.csv")
+      .then((r) => r.text())
+      .then((text) => setGpData(parseGPCSV(text)));
+  }, []);
+
+  const bestIdx = gpData.length
+    ? gpData.reduce((bi, d, i) => (d.predicted_loss < gpData[bi].predicted_loss ? i : bi), 0)
+    : -1;
+
+  const best = bestIdx >= 0 ? gpData[bestIdx] : null;
 
   const nextStep = useCallback(() => {
     if (step < TOTAL_STEPS - 1) setStep(step + 1);
@@ -137,7 +226,15 @@ const Onboarding = () => {
   }, []);
 
   const toggleCatChoice = (label: string, choice: string) => {
-    setCatSelections((prev) => ({ ...prev, [label]: [choice] }));
+    setCatSelections((prev) => {
+      const current = prev[label] ?? [];
+      return {
+        ...prev,
+        [label]: current.includes(choice)
+          ? current.filter((c) => c !== choice)
+          : [...current, choice],
+      };
+    });
   };
 
   const updateRange = (label: string, field: "min" | "max", value: string) => {
@@ -146,6 +243,11 @@ const Onboarding = () => {
 
   return (
     <div className="min-h-screen flex flex-col px-6 py-12 page-enter">
+      {step === 4 && (
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full pointer-events-none -z-10 overflow-hidden">
+          <GreenEnergyBackground />
+        </div>
+      )}
       {/* Top bar */}
       <div className="max-w-2xl w-full mx-auto flex items-center justify-between mb-12">
         <button onClick={prevStep} className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5 text-sm">
@@ -160,7 +262,7 @@ const Onboarding = () => {
         <span className="text-sm text-muted-foreground">Step {step + 1}/{TOTAL_STEPS}</span>
       </div>
 
-      <div className={`${step === 4 || step === 5 ? "max-w-4xl" : "max-w-2xl"} w-full mx-auto flex-1 transition-all duration-300`}>
+      <div className={`${step === 3 || step === 4 || step === 5 ? "max-w-4xl" : "max-w-2xl"} w-full mx-auto flex-1 transition-all duration-300`}>
 
         {/* Step 0: Describe */}
         {step === 0 && (
@@ -335,15 +437,18 @@ const Onboarding = () => {
             </div>
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 pt-4">
-              <button onClick={() => setStep(4)} className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:opacity-90 transition-opacity">
-                Continue <ArrowRight className="w-4 h-4" />
-              </button>
               <button
                 onClick={() => setStep(3)}
-                className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors border border-border rounded-md px-4 py-3"
+                className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:opacity-90 transition-opacity"
               >
                 <Sparkles className="w-4 h-4" />
                 Skip — make a smart decision for me
+              </button>
+              <button
+                onClick={() => setStep(4)}
+                className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors border border-border rounded-md px-4 py-3"
+              >
+                Continue <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -351,13 +456,21 @@ const Onboarding = () => {
 
         {/* Step 3: Recommended config */}
         {step === 3 && (
-          <div className="space-y-8 animate-fade-in">
+          <div className="space-y-8 animate-fade-in max-w-3xl">
             <div>
               <h2 className="text-2xl md:text-3xl font-semibold mb-2">Recommended config</h2>
-              <p className="text-muted-foreground">We've selected the best settings for your task.</p>
+              <p className="text-muted-foreground">Optimal hyperparameters selected by the GP surrogate model.</p>
             </div>
+
+            {/* Config table */}
             <div className="surface-elevated rounded-md divide-y divide-border">
-              {configParams.map((param) => (
+              {[
+                { label: "Base model", value: "nanoGPT", tip: "Lightweight GPT implementation" },
+                { label: "LoRA rank", value: best ? formatParam("lora_r", best.lora_r) : "—", tip: "Low-rank adaptation rank from GP optimisation" },
+                { label: "Learning rate", value: best ? formatParam("learning_rate", best.learning_rate) : "—", tip: "Optimal learning rate from GP surrogate" },
+                { label: "LoRA dropout", value: best ? formatParam("lora_dropout", best.lora_dropout) : "—", tip: "Dropout rate on LoRA layers" },
+                { label: "Batch size", value: best ? formatParam("batch_size", best.batch_size) : "—", tip: "Mini-batch size for gradient updates" },
+              ].map((param) => (
                 <div key={param.label} className="flex items-center justify-between px-5 py-4">
                   <div className="flex items-center gap-2">
                     <span className="text-secondary-foreground">{param.label}</span>
@@ -373,23 +486,18 @@ const Onboarding = () => {
                   <span className="font-mono text-sm text-foreground">{param.value}</span>
                 </div>
               ))}
-              {advancedParams.map((param) => (
-                <div key={param.label} className="flex items-center justify-between px-5 py-3.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-secondary-foreground text-sm">{param.label}</span>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs">
-                        <p className="text-xs">{param.tip}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                  <span className="font-mono text-sm text-foreground">{param.value}</span>
-                </div>
-              ))}
             </div>
+
+            {/* Scatter plots */}
+            {gpData.length > 0 && (
+              <div className="grid grid-cols-2 gap-4">
+                <ScatterPlot data={gpData} xKey="lora_r" xLabel="Lora rank" bestIdx={bestIdx} />
+                <ScatterPlot data={gpData} xKey="learning_rate" xLabel="Learning rate" bestIdx={bestIdx} />
+                <ScatterPlot data={gpData} xKey="lora_dropout" xLabel="Lora dropout" bestIdx={bestIdx} />
+                <ScatterPlot data={gpData} xKey="batch_size" xLabel="Batch size" bestIdx={bestIdx} />
+              </div>
+            )}
+
             <div className="pt-4">
               <button onClick={nextStep} className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:opacity-90 transition-opacity">
                 Continue <ArrowRight className="w-4 h-4" />
@@ -406,29 +514,55 @@ const Onboarding = () => {
               <p className="text-muted-foreground">We've scheduled GPUs across our global infrastructure for your training job.</p>
             </div>
             <DataCenterMap />
-            <div className="pt-4">
-              <button onClick={nextStep} className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:opacity-90 transition-opacity">
-                Continue <ArrowRight className="w-4 h-4" />
-              </button>
+
+            {/* Two action sections */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+              {/* Schedule now */}
+              <div className="surface-elevated rounded-md px-5 py-5 flex flex-col gap-4">
+                <div>
+                  <p className="font-medium text-foreground mb-1">Schedule now</p>
+                  <p className="text-sm text-muted-foreground">Start training immediately on the best available data center.</p>
+                </div>
+                <button
+                  onClick={nextStep}
+                  className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-md font-medium hover:opacity-90 transition-opacity self-start"
+                >
+                  <Zap className="w-4 h-4" />
+                  Schedule now!
+                </button>
+              </div>
+
+              {/* CO₂-optimised */}
+              <div className="surface-elevated rounded-md px-5 py-5 flex flex-col gap-4">
+                <div>
+                  <p className="font-medium text-foreground mb-1">Optimise for CO₂</p>
+                  <p className="text-sm text-muted-foreground">Set a deadline and we'll find the lowest-carbon window to run your job.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={168}
+                    value={deadline}
+                    onChange={(e) => setDeadline(e.target.value)}
+                    placeholder="Hours"
+                    className="bg-background border border-border rounded px-3 py-2 text-sm text-foreground w-24 focus:outline-none focus:ring-1 focus:ring-primary/50"
+                  />
+                  <span className="text-sm text-muted-foreground">h deadline</span>
+                </div>
+                <button
+                  onClick={nextStep}
+                  disabled={!deadline}
+                  className="inline-flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-md font-medium hover:opacity-90 transition-opacity self-start disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Leaf className="w-4 h-4" />
+                  Optimise CO₂ emissions
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* Step 5: Loss Landscape */}
-        {step === 5 && (
-          <div className="space-y-8 animate-fade-in">
-            <div>
-              <h2 className="text-2xl md:text-3xl font-semibold mb-2">Hyperparameter search</h2>
-              <p className="text-muted-foreground">Bayesian Optimization finds optimal hyperparameters with fewer trials than grid or random search.</p>
-            </div>
-            <LossLandscape />
-            <div className="pt-4">
-              <button onClick={nextStep} className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:opacity-90 transition-opacity">
-                Start training <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
 
       </div>
     </div>

@@ -45,82 +45,82 @@ const Results = () => {
   const multiplier = +(G_CO2_BASELINE / g_actual).toFixed(1);
 
   return (
-    <div className="min-h-screen flex flex-col items-center px-6 py-16 page-enter">
+    <div className="min-h-screen flex flex-col items-center px-6 py-16 page-enter bg-gray-950 text-white">
       <div className="max-w-3xl w-full space-y-12">
         {/* Header */}
         <div className="animate-fade-in">
           <div className="flex items-center gap-2 mb-4">
-            <div className="w-2 h-2 rounded-full bg-terminal-green" />
-            <span className="text-sm font-medium text-terminal-green">Training complete</span>
+            <div className="w-2 h-2 rounded-full bg-emerald-400" />
+            <span className="text-sm font-medium text-emerald-400">Training complete</span>
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold mb-2">Your model is ready</h1>
-          <p className="text-muted-foreground text-lg">nanoGPT + LoRA</p>
+          <h1 className="text-3xl md:text-4xl font-bold mb-2 text-white">Your model is ready</h1>
+          <p className="text-gray-400 text-lg">nanoGPT + LoRA</p>
         </div>
 
         {/* Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fade-in-up">
           {metrics.map((m) => (
-            <div key={m.label} className="surface-elevated rounded-md p-5">
-              <p className="text-sm text-muted-foreground mb-1">{m.label}</p>
-              <p className="text-2xl font-semibold">{m.value}</p>
+            <div key={m.label} className="bg-gray-900 border border-gray-800 rounded-md p-5">
+              <p className="text-sm text-gray-400 mb-1">{m.label}</p>
+              <p className="text-2xl font-semibold text-white">{m.value}</p>
               {m.delta && (
-                <p className="text-xs text-primary mt-1">{m.delta}</p>
+                <p className="text-xs text-emerald-400 mt-1">{m.delta}</p>
               )}
             </div>
           ))}
         </div>
 
         {/* Green impact section */}
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-6 space-y-6 animate-fade-in-up">
+        <div className="rounded-xl bg-emerald-700 p-6 space-y-6 animate-fade-in-up">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Leaf className="w-5 h-5 text-emerald-600" />
-              <h3 className="text-lg font-semibold text-emerald-600">Your environmental impact</h3>
+              <Leaf className="w-5 h-5 text-emerald-200" />
+              <h3 className="text-lg font-semibold text-white">Your environmental impact</h3>
             </div>
-            <div className="flex items-center gap-2 bg-emerald-500/15 border border-emerald-500/25 rounded-full px-4 py-1.5">
-              <span className="text-2xl font-bold text-emerald-600">{multiplier}×</span>
-              <span className="text-sm text-emerald-700">less CO₂ emitted</span>
+            <div className="flex items-center gap-2 bg-white/20 border border-white/30 rounded-full px-4 py-1.5">
+              <span className="text-2xl font-bold text-white">{multiplier}×</span>
+              <span className="text-sm text-emerald-100">less CO₂ emitted</span>
             </div>
           </div>
 
           {/* Three stat cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-5 py-4">
-              <p className="text-3xl font-bold text-emerald-600">{RUNS_SAVED}</p>
-              <p className="text-sm font-medium text-emerald-700 mt-1">training runs saved</p>
-              <p className="text-xs text-emerald-700/60 mt-2">Bayesian optimisation converged in just <span className="font-semibold">{BAYESIAN_RUNS} runs</span> vs {RUNS_SAVED + BAYESIAN_RUNS} for full grid search</p>
+            <div className="rounded-lg bg-emerald-600/60 border border-emerald-500/40 px-5 py-4">
+              <p className="text-3xl font-bold text-white">{RUNS_SAVED}</p>
+              <p className="text-sm font-medium text-emerald-100 mt-1">training runs saved</p>
+              <p className="text-xs text-emerald-200/80 mt-2">Bayesian optimisation converged in just <span className="font-semibold">{BAYESIAN_RUNS} runs</span> vs {RUNS_SAVED + BAYESIAN_RUNS} for full grid search</p>
             </div>
-            <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-5 py-4">
-              <p className="text-3xl font-bold text-emerald-600">{KG_CO2_HPO} <span className="text-lg font-medium">kg</span></p>
-              <p className="text-sm font-medium text-emerald-700 mt-1">CO₂ saved by HPO</p>
-              <p className="text-xs text-emerald-700/60 mt-2">{RUNS_SAVED} fewer GPU runs × {G_CO2_PER_RUN} g CO₂ / run</p>
+            <div className="rounded-lg bg-emerald-600/60 border border-emerald-500/40 px-5 py-4">
+              <p className="text-3xl font-bold text-white">{KG_CO2_HPO} <span className="text-lg font-medium">kg</span></p>
+              <p className="text-sm font-medium text-emerald-100 mt-1">CO₂ saved by HPO</p>
+              <p className="text-xs text-emerald-200/80 mt-2">{RUNS_SAVED} fewer GPU runs × {G_CO2_PER_RUN} g CO₂ / run</p>
             </div>
             {schedulingOptimised ? (
-              <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-5 py-4">
-                <p className="text-3xl font-bold text-emerald-600">{schedSaved} <span className="text-lg font-medium">g</span></p>
-                <p className="text-sm font-medium text-emerald-700 mt-1">CO₂ saved by scheduling</p>
-                <p className="text-xs text-emerald-700/60 mt-2">Abilene TX vs Ireland × {BAYESIAN_RUNS} runs ({+(G_CO2_SCHED_PER_RUN).toFixed(1)} g/run)</p>
+              <div className="rounded-lg bg-emerald-600/60 border border-emerald-500/40 px-5 py-4">
+                <p className="text-3xl font-bold text-white">{schedSaved} <span className="text-lg font-medium">g</span></p>
+                <p className="text-sm font-medium text-emerald-100 mt-1">CO₂ saved by scheduling</p>
+                <p className="text-xs text-emerald-200/80 mt-2">Abilene TX vs Ireland × {BAYESIAN_RUNS} runs ({+(G_CO2_SCHED_PER_RUN).toFixed(1)} g/run)</p>
               </div>
             ) : (
-              <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-5 py-4">
-                <p className="text-3xl font-bold text-amber-600">0 <span className="text-lg font-medium">g</span></p>
-                <p className="text-sm font-medium text-amber-700 mt-1">CO₂ saved by scheduling</p>
-                <p className="text-xs text-amber-700/60 mt-2">You chose to schedule immediately.</p>
+              <div className="rounded-lg bg-amber-500/40 border border-amber-400/40 px-5 py-4">
+                <p className="text-3xl font-bold text-white">0 <span className="text-lg font-medium">g</span></p>
+                <p className="text-sm font-medium text-amber-100 mt-1">CO₂ saved by scheduling</p>
+                <p className="text-xs text-amber-200/80 mt-2">You chose to schedule immediately.</p>
                 <div className="mt-3 flex items-start gap-1.5">
-                  <TrendingDown className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
-                  <p className="text-xs text-amber-700">You could have saved an additional <span className="font-semibold">{G_CO2_SCHED} g</span> by waiting for a low-carbon window.</p>
+                  <TrendingDown className="w-3.5 h-3.5 text-amber-200 mt-0.5 shrink-0" />
+                  <p className="text-xs text-amber-100">You could have saved an additional <span className="font-semibold">{G_CO2_SCHED} g</span> by waiting for a low-carbon window.</p>
                 </div>
               </div>
             )}
           </div>
 
           {/* Total + equivalences */}
-          <div className="border-t border-emerald-500/20 pt-4 space-y-3">
+          <div className="border-t border-white/20 pt-4 space-y-3">
             <div className="flex items-baseline gap-2">
-              <span className="text-4xl font-bold text-emerald-600">{kgTotal}</span>
-              <span className="text-xl text-emerald-600">kg CO₂ saved in total</span>
+              <span className="text-4xl font-bold text-white">{kgTotal}</span>
+              <span className="text-xl text-emerald-100">kg CO₂ saved in total</span>
             </div>
-            <div className="flex flex-wrap gap-5 text-sm text-emerald-700">
+            <div className="flex flex-wrap gap-5 text-sm text-emerald-100">
               <span className="flex items-center gap-1.5"><Car className="w-4 h-4" /> {kmCar} km not driven</span>
               <span className="flex items-center gap-1.5"><Zap className="w-4 h-4" /> {kwhSaved} kWh of electricity</span>
               <span className="flex items-center gap-1.5"><Trees className="w-4 h-4" /> {streamHours} hours of video streaming</span>
@@ -130,11 +130,11 @@ const Results = () => {
 
         {/* Actions */}
         <div className="flex flex-wrap gap-3 animate-fade-in-up">
-          <button className="inline-flex items-center gap-2 surface-elevated rounded-md px-5 py-3 text-sm font-medium text-foreground hover:bg-surface-hover transition-colors">
+          <button className="inline-flex items-center gap-2 bg-gray-900 border border-gray-700 rounded-md px-5 py-3 text-sm font-medium text-white hover:bg-gray-800 transition-colors">
             <Download className="w-4 h-4" />
             Download model
           </button>
-          <button className="inline-flex items-center gap-2 surface-elevated rounded-md px-5 py-3 text-sm font-medium text-foreground hover:bg-surface-hover transition-colors">
+          <button className="inline-flex items-center gap-2 bg-gray-900 border border-gray-700 rounded-md px-5 py-3 text-sm font-medium text-white hover:bg-gray-800 transition-colors">
             <Key className="w-4 h-4" />
             Get API key
           </button>
@@ -144,7 +144,7 @@ const Results = () => {
         <div>
           <button
             onClick={() => navigate("/")}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="text-sm text-gray-500 hover:text-gray-200 transition-colors"
           >
             ← Start a new training
           </button>

@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Download, Key, Leaf, Trees, Car, Zap } from "lucide-react";
+import { Download, Key, Leaf, Trees, Car, Zap, TrendingDown } from "lucide-react";
 
 // ── Impact calculations ───────────────────────────────────────────────────────
 // Grid search over the defined search space (batch: 4, optimizer: 4,
@@ -32,6 +32,17 @@ const metrics = [
 
 const Results = () => {
   const navigate = useNavigate();
+  const schedulingMode = sessionStorage.getItem("schedulingMode") ?? "optimised";
+  const schedulingOptimised = schedulingMode === "optimised";
+
+  const schedSaved   = schedulingOptimised ? G_CO2_SCHED : 0;
+  const kgTotal      = schedulingOptimised ? KG_CO2_TOTAL : +KG_CO2_HPO.toFixed(2);
+  const kmCar        = Math.round(kgTotal / 0.25);
+  const kwhSaved     = Math.round(kgTotal / 0.233);
+  const streamHours  = Math.round(kgTotal * 1000 / 36);
+  // Multiplier: actual vs baseline, scheduling contribution depends on mode
+  const g_actual   = BAYESIAN_RUNS * G_CO2_PER_RUN + (schedulingOptimised ? BAYESIAN_RUNS * 8 * 1.921 * 0.5 : BAYESIAN_RUNS * 8 * 4.222 * 0.5);
+  const multiplier = +(G_CO2_BASELINE / g_actual).toFixed(1);
 
   return (
     <div className="min-h-screen flex flex-col items-center px-6 py-16 page-enter">
@@ -67,7 +78,7 @@ const Results = () => {
               <h3 className="text-lg font-semibold text-emerald-600">Your environmental impact</h3>
             </div>
             <div className="flex items-center gap-2 bg-emerald-500/15 border border-emerald-500/25 rounded-full px-4 py-1.5">
-              <span className="text-2xl font-bold text-emerald-600">{CO2_MULTIPLIER}×</span>
+              <span className="text-2xl font-bold text-emerald-600">{multiplier}×</span>
               <span className="text-sm text-emerald-700">less CO₂ emitted</span>
             </div>
           </div>
@@ -84,23 +95,35 @@ const Results = () => {
               <p className="text-sm font-medium text-emerald-700 mt-1">CO₂ saved by HPO</p>
               <p className="text-xs text-emerald-700/60 mt-2">{RUNS_SAVED} fewer GPU runs × {G_CO2_PER_RUN} g CO₂ / run</p>
             </div>
-            <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-5 py-4">
-              <p className="text-3xl font-bold text-emerald-600">{G_CO2_SCHED} <span className="text-lg font-medium">g</span></p>
-              <p className="text-sm font-medium text-emerald-700 mt-1">CO₂ saved by scheduling</p>
-              <p className="text-xs text-emerald-700/60 mt-2">Abilene TX vs Ireland × {BAYESIAN_RUNS} runs ({+(G_CO2_SCHED_PER_RUN).toFixed(1)} g/run)</p>
-            </div>
+            {schedulingOptimised ? (
+              <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-5 py-4">
+                <p className="text-3xl font-bold text-emerald-600">{schedSaved} <span className="text-lg font-medium">g</span></p>
+                <p className="text-sm font-medium text-emerald-700 mt-1">CO₂ saved by scheduling</p>
+                <p className="text-xs text-emerald-700/60 mt-2">Abilene TX vs Ireland × {BAYESIAN_RUNS} runs ({+(G_CO2_SCHED_PER_RUN).toFixed(1)} g/run)</p>
+              </div>
+            ) : (
+              <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-5 py-4">
+                <p className="text-3xl font-bold text-amber-600">0 <span className="text-lg font-medium">g</span></p>
+                <p className="text-sm font-medium text-amber-700 mt-1">CO₂ saved by scheduling</p>
+                <p className="text-xs text-amber-700/60 mt-2">You chose to schedule immediately.</p>
+                <div className="mt-3 flex items-start gap-1.5">
+                  <TrendingDown className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
+                  <p className="text-xs text-amber-700">You could have saved an additional <span className="font-semibold">{G_CO2_SCHED} g</span> by waiting for a low-carbon window.</p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Total + equivalences */}
           <div className="border-t border-emerald-500/20 pt-4 space-y-3">
             <div className="flex items-baseline gap-2">
-              <span className="text-4xl font-bold text-emerald-600">{KG_CO2_TOTAL}</span>
+              <span className="text-4xl font-bold text-emerald-600">{kgTotal}</span>
               <span className="text-xl text-emerald-600">kg CO₂ saved in total</span>
             </div>
             <div className="flex flex-wrap gap-5 text-sm text-emerald-700">
-              <span className="flex items-center gap-1.5"><Car className="w-4 h-4" /> {KM_CAR} km not driven</span>
-              <span className="flex items-center gap-1.5"><Zap className="w-4 h-4" /> {KWH_SAVED} kWh of electricity</span>
-              <span className="flex items-center gap-1.5"><Trees className="w-4 h-4" /> {STREAM_HOURS} hours of video streaming</span>
+              <span className="flex items-center gap-1.5"><Car className="w-4 h-4" /> {kmCar} km not driven</span>
+              <span className="flex items-center gap-1.5"><Zap className="w-4 h-4" /> {kwhSaved} kWh of electricity</span>
+              <span className="flex items-center gap-1.5"><Trees className="w-4 h-4" /> {streamHours} hours of video streaming</span>
             </div>
           </div>
         </div>

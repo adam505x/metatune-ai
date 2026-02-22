@@ -478,7 +478,7 @@ const Onboarding = () => {
                   <p className="text-sm text-muted-foreground">Start training immediately on the best available data center.</p>
                 </div>
                 <button
-                  onClick={nextStep}
+                  onClick={() => { sessionStorage.setItem("schedulingMode", "now"); nextStep(); }}
                   className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-md font-medium hover:opacity-90 transition-opacity self-start"
                 >
                   <Zap className="w-4 h-4" />
@@ -505,7 +505,7 @@ const Onboarding = () => {
                   <span className="text-sm text-muted-foreground">h deadline</span>
                 </div>
                 <button
-                  onClick={nextStep}
+                  onClick={() => { sessionStorage.setItem("schedulingMode", "optimised"); nextStep(); }}
                   disabled={!deadline}
                   className="inline-flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-md font-medium hover:opacity-90 transition-opacity self-start disabled:opacity-40 disabled:cursor-not-allowed"
                 >

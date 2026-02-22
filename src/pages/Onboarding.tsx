@@ -5,8 +5,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import DataCenterMap from "@/components/DataCenterMap";
 import GreenEnergyBackground from "@/components/GreenEnergyBackground";
 
-const categories = ["Classification", "Generation", "Ranking", "Extraction"];
-
 // ── File parsing ──────────────────────────────────────────────────────────────
 
 interface ParsedFile {
@@ -165,29 +163,24 @@ const ScatterPlot = ({ data, xKey, xLabel, bestIdx }: ScatterPlotProps) => {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 4;
 
 const Onboarding = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
 
-  // Step 0
-  const [description, setDescription] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-
-  // Step 1
+  // Step 0 — file upload
   const [parsedFile, setParsedFile] = useState<ParsedFile | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Step 2 — search space
+  // Step 1 — search space
   const [catSelections, setCatSelections] = useState<Record<string, string[]>>(defaultCategoricalSelections);
   const [ranges, setRanges] = useState<Record<string, { min: string; max: string }>>(defaultRanges);
 
-
-  // Step 4 — scheduling
+  // Step 3 — scheduling
   const [deadline, setDeadline] = useState("");
 
-  // Step 3 — GP surrogate data
+  // Step 2 — GP surrogate data
   const [gpData, setGpData] = useState<GPRow[]>([]);
 
   useEffect(() => {
@@ -243,7 +236,7 @@ const Onboarding = () => {
 
   return (
     <div className="min-h-screen flex flex-col px-6 py-12 page-enter">
-      {step === 4 && (
+      {step === 3 && (
         <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full pointer-events-none -z-10 overflow-hidden">
           <GreenEnergyBackground />
         </div>
@@ -262,49 +255,10 @@ const Onboarding = () => {
         <span className="text-sm text-muted-foreground">Step {step + 1}/{TOTAL_STEPS}</span>
       </div>
 
-      <div className={`${step === 3 || step === 4 || step === 5 ? "max-w-4xl" : "max-w-2xl"} w-full mx-auto flex-1 transition-all duration-300`}>
+      <div className={`${step === 2 || step === 3 ? "max-w-4xl" : "max-w-2xl"} w-full mx-auto flex-1 transition-all duration-300`}>
 
-        {/* Step 0: Describe */}
+        {/* Step 0: Upload */}
         {step === 0 && (
-          <div className="space-y-8 animate-fade-in">
-            <div>
-              <h2 className="text-2xl md:text-3xl font-semibold mb-2">What are you training for?</h2>
-              <p className="text-muted-foreground">Describe your problem in plain English — we'll figure out the rest.</p>
-            </div>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe your problem in plain English..."
-              className="w-full h-40 bg-card border border-border rounded-md px-4 py-3 text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-1 focus:ring-primary/50 transition-shadow"
-            />
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">Or pick a category:</p>
-              <div className="flex flex-wrap gap-2">
-                {categories.map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
-                    className={`px-4 py-2 rounded-md text-sm font-medium border transition-colors ${
-                      selectedCategory === cat
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-card border-border text-secondary-foreground hover:border-primary/50"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="pt-4">
-              <button onClick={nextStep} className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:opacity-90 transition-opacity">
-                Continue <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 1: Upload */}
-        {step === 1 && (
           <div className="space-y-8 animate-fade-in">
             <div>
               <h2 className="text-2xl md:text-3xl font-semibold mb-2">Upload your data</h2>
@@ -373,8 +327,8 @@ const Onboarding = () => {
           </div>
         )}
 
-        {/* Step 2: Hyperparameter search space */}
-        {step === 2 && (
+        {/* Step 1: Hyperparameter search space */}
+        {step === 1 && (
           <div className="space-y-8 animate-fade-in">
             <div>
               <h2 className="text-2xl md:text-3xl font-semibold mb-2">Define your search space</h2>
@@ -438,14 +392,14 @@ const Onboarding = () => {
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 pt-4">
               <button
-                onClick={() => setStep(3)}
+                onClick={() => setStep(2)}
                 className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:opacity-90 transition-opacity"
               >
                 <Sparkles className="w-4 h-4" />
                 Skip — make a smart decision for me
               </button>
               <button
-                onClick={() => setStep(4)}
+                onClick={() => setStep(3)}
                 className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors border border-border rounded-md px-4 py-3"
               >
                 Continue <ArrowRight className="w-4 h-4" />
@@ -454,8 +408,8 @@ const Onboarding = () => {
           </div>
         )}
 
-        {/* Step 3: Recommended config */}
-        {step === 3 && (
+        {/* Step 2: Recommended config */}
+        {step === 2 && (
           <div className="space-y-8 animate-fade-in max-w-3xl">
             <div>
               <h2 className="text-2xl md:text-3xl font-semibold mb-2">Recommended config</h2>
@@ -506,8 +460,8 @@ const Onboarding = () => {
           </div>
         )}
 
-        {/* Step 4: Data Center Map */}
-        {step === 4 && (
+        {/* Step 3: Data Center Map */}
+        {step === 3 && (
           <div className="space-y-8 animate-fade-in">
             <div>
               <h2 className="text-2xl md:text-3xl font-semibold mb-2">Compute allocation</h2>

@@ -1,213 +1,222 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from "recharts";
-import { Clock, Database, Cpu, Layers } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Legend } from "recharts";
+import { Clock, Cpu, Zap, Thermometer, Activity } from "lucide-react";
 
-// Generate fake loss data
-const generateLossData = (steps: number) => {
-  const data = [];
-  for (let i = 0; i <= steps; i += 10) {
-    const loss = 2.5 * Math.exp(-i / 400) + 0.15 + Math.random() * 0.05;
-    data.push({ step: i, loss: parseFloat(loss.toFixed(4)) });
+// ── Training simulation ────────────────────────────────────────────────────────
+
+const TOTAL_STEPS = 2000;
+const SEED = 42;
+
+function seededRand(seed: number) {
+  let s = seed;
+  return () => { s = (s * 1664525 + 1013904223) & 0xffffffff; return (s >>> 0) / 0xffffffff; };
+}
+
+function buildFullCurves() {
+  const rand = seededRand(SEED);
+  const train: { step: number; train: number; val: number }[] = [];
+  for (let i = 0; i <= TOTAL_STEPS; i += 20) {
+    const t = i / TOTAL_STEPS;
+    const trainLoss = 2.8 * Math.exp(-4.5 * t) + 0.18 + rand() * 0.04 - 0.02;
+    const valLoss   = 2.8 * Math.exp(-4.0 * t) + 0.24 + rand() * 0.06 - 0.03;
+    train.push({ step: i, train: +trainLoss.toFixed(4), val: +valLoss.toFixed(4) });
   }
-  return data;
+  return train;
+}
+
+const FULL_CURVES = buildFullCurves();
+
+// ── Log lines ─────────────────────────────────────────────────────────────────
+
+const LOG_LINES: { tag: "INFO" | "TRAIN" | "EVAL" | "WARN"; text: string }[] = [
+  { tag: "INFO",  text: "Loading dataset from uploaded file" },
+  { tag: "INFO",  text: "Tokenizing samples... avg length: 128 tokens" },
+  { tag: "INFO",  text: "Tokenization complete" },
+  { tag: "INFO",  text: "Initializing nanoGPT from checkpoint" },
+  { tag: "INFO",  text: "LoRA adapters attached (rank=8, alpha=16)" },
+  { tag: "INFO",  text: "Mixed precision: bf16 enabled" },
+  { tag: "INFO",  text: "Starting training — 3 epochs, 2000 steps" },
+  { tag: "TRAIN", text: "Step  200/2000 | loss: 1.8821 | lr: 2.37e-4 | tok/s: 12,340" },
+  { tag: "TRAIN", text: "Step  400/2000 | loss: 1.3104 | lr: 2.20e-4 | tok/s: 12,480" },
+  { tag: "EVAL",  text: "Val loss: 1.2893 | perplexity: 3.63" },
+  { tag: "TRAIN", text: "Step  600/2000 | loss: 0.9912 | lr: 1.98e-4 | tok/s: 12,510" },
+  { tag: "TRAIN", text: "Step  800/2000 | loss: 0.7341 | lr: 1.72e-4 | tok/s: 12,560" },
+  { tag: "INFO",  text: "Checkpoint saved (step 800)" },
+  { tag: "EVAL",  text: "Val loss: 0.7102 | perplexity: 2.03" },
+  { tag: "TRAIN", text: "Step 1000/2000 | loss: 0.5630 | lr: 1.41e-4 | tok/s: 12,590" },
+  { tag: "TRAIN", text: "Step 1200/2000 | loss: 0.4521 | lr: 1.08e-4 | tok/s: 12,600" },
+  { tag: "EVAL",  text: "Val loss: 0.4388 | perplexity: 1.55" },
+  { tag: "TRAIN", text: "Step 1400/2000 | loss: 0.3714 | lr: 7.60e-5 | tok/s: 12,610" },
+  { tag: "TRAIN", text: "Step 1600/2000 | loss: 0.3148 | lr: 4.60e-5 | tok/s: 12,620" },
+  { tag: "INFO",  text: "Checkpoint saved (step 1600)" },
+  { tag: "EVAL",  text: "Val loss: 0.3091 | perplexity: 1.36" },
+  { tag: "TRAIN", text: "Step 1800/2000 | loss: 0.2741 | lr: 2.10e-5 | tok/s: 12,630" },
+  { tag: "TRAIN", text: "Step 2000/2000 | loss: 0.2512 | lr: 0.00e+0 | tok/s: 12,640" },
+  { tag: "INFO",  text: "Training complete — best val loss: 0.2891" },
+];
+
+const TAG_STYLE: Record<string, string> = {
+  INFO:  "text-muted-foreground",
+  TRAIN: "text-primary",
+  EVAL:  "text-emerald-400",
+  WARN:  "text-yellow-400",
 };
 
-const logLines = [
-  "[INFO] Loading dataset: support_tickets.csv",
-  "[INFO] Tokenizing 4,892 samples...",
-  "[INFO] Tokenization complete. Avg length: 128 tokens",
-  "[INFO] Initializing Llama 3.1 8B from checkpoint",
-  "[INFO] LoRA adapters attached (rank=16, alpha=32)",
-  "[INFO] Starting training — 3 epochs, 2,000 steps",
-  "[TRAIN] Step 100/2000 | Loss: 1.8234 | LR: 1.9e-5",
-  "[TRAIN] Step 200/2000 | Loss: 1.2451 | LR: 1.8e-5",
-  "[TRAIN] Step 300/2000 | Loss: 0.8923 | LR: 1.7e-5",
-  "[TRAIN] Step 400/2000 | Loss: 0.6341 | LR: 1.5e-5",
-  "[TRAIN] Step 500/2000 | Loss: 0.4812 | LR: 1.3e-5",
-  "[EVAL]  Validation loss: 0.4523 | Accuracy: 87.2%",
-  "[TRAIN] Step 600/2000 | Loss: 0.3891 | LR: 1.1e-5",
-  "[TRAIN] Step 700/2000 | Loss: 0.3214 | LR: 9.0e-6",
-  "[TRAIN] Step 800/2000 | Loss: 0.2845 | LR: 7.0e-6",
-  "[INFO] Checkpoint saved at step 800",
-];
+
+// ── Metric card ───────────────────────────────────────────────────────────────
+
+const MetricCard = ({ icon: Icon, label, value, sub }: { icon: React.ElementType; label: string; value: string; sub?: string }) => (
+  <div className="surface-elevated rounded-md px-4 py-3 flex items-center gap-3">
+    <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
+    <div className="min-w-0">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="font-mono text-sm font-medium text-foreground">{value}</p>
+      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+    </div>
+  </div>
+);
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 const Training = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
-  const [visibleLogs, setVisibleLogs] = useState<string[]>([]);
-  const [lossData, setLossData] = useState<{ step: number; loss: number }[]>([]);
+  const [visibleLogs, setVisibleLogs] = useState<typeof LOG_LINES>([]);
+  const [gpuTemp, setGpuTemp] = useState(52);
   const logRef = useRef<HTMLDivElement>(null);
 
+  // Step counter
   useEffect(() => {
-    const stepInterval = setInterval(() => {
-      setCurrentStep((prev) => {
-        if (prev >= 2000) {
-          clearInterval(stepInterval);
-          return 2000;
-        }
-        return prev + 7;
+    const iv = setInterval(() => {
+      setCurrentStep((p) => {
+        if (p >= TOTAL_STEPS) { clearInterval(iv); return TOTAL_STEPS; }
+        return p + 34;
       });
     }, 50);
-    return () => clearInterval(stepInterval);
+    return () => clearInterval(iv);
   }, []);
 
+  // Log reveal
   useEffect(() => {
-    setLossData(generateLossData(Math.min(currentStep, 2000)));
-  }, [currentStep]);
-
-  useEffect(() => {
-    const logInterval = setInterval(() => {
-      setVisibleLogs((prev) => {
-        if (prev.length >= logLines.length) return prev;
-        return [...prev, logLines[prev.length]];
-      });
-    }, 800);
-    return () => clearInterval(logInterval);
+    const iv = setInterval(() => {
+      setVisibleLogs((p) => p.length >= LOG_LINES.length ? p : [...p, LOG_LINES[p.length]]);
+    }, 125);
+    return () => clearInterval(iv);
   }, []);
 
+  // GPU temp jitter
   useEffect(() => {
-    if (logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
-    }
-  }, [visibleLogs]);
+    const iv = setInterval(() => setGpuTemp((t) => Math.min(82, Math.max(68, t + Math.round((Math.random() - 0.48) * 2)))), 1200);
+    return () => clearInterval(iv);
+  }, []);
 
-  const progress = Math.min((currentStep / 2000) * 100, 100);
-  const eta = Math.max(0, Math.round((2000 - currentStep) * 0.42));
-  const etaMin = Math.floor(eta / 60);
-  const etaSec = eta % 60;
+  // Auto-scroll logs
+  useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [visibleLogs]);
+
+  const progress = Math.min(currentStep / TOTAL_STEPS, 1);
+  const pct = Math.round(progress * 100);
+  const eta = Math.max(0, Math.round((TOTAL_STEPS - currentStep) * 0.042));
+  const etaStr = eta > 60 ? `${Math.floor(eta / 60)}m ${eta % 60}s` : `${eta}s`;
+  const currentVal = FULL_CURVES[Math.min(Math.floor(progress * (FULL_CURVES.length - 1)), FULL_CURVES.length - 1)].val;
+  const tokensPerSec = (11800 + Math.round(progress * 900)).toLocaleString();
+
+  const visibleCurves = useMemo(
+    () => FULL_CURVES.slice(0, Math.max(1, Math.floor(progress * FULL_CURVES.length))),
+    [progress]
+  );
 
   return (
-    <div className="min-h-screen flex page-enter">
-      {/* Sidebar */}
-      <aside className="w-72 border-r border-border p-6 hidden lg:flex flex-col gap-8">
-        <div>
-          <div className="flex items-center gap-2 mb-6">
-            <div className="w-2 h-2 rounded-full bg-primary" />
-            <span className="text-sm font-medium tracking-widest uppercase text-muted-foreground">MetaTune</span>
-          </div>
-          <h3 className="font-semibold text-lg mb-1">support-ticket-classifier</h3>
-          <p className="text-sm text-muted-foreground">Classification task</p>
+    <div className="min-h-screen flex flex-col page-enter bg-background">
+      {/* Top bar */}
+      <header className="border-b border-border px-6 py-3 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3">
+          <div className={`w-2 h-2 rounded-full ${pct >= 100 ? "bg-emerald-500" : "bg-primary animate-pulse"}`} />
+          <span className="text-sm font-medium">
+            {pct >= 100 ? "Training complete" : "Training in progress"}
+          </span>
+          <span className="text-xs text-muted-foreground font-mono">
+            step {Math.min(currentStep, TOTAL_STEPS).toLocaleString()} / {TOTAL_STEPS.toLocaleString()}
+          </span>
         </div>
-
-        <div className="space-y-5 text-sm">
-          <div className="flex items-center gap-3 text-secondary-foreground">
-            <Database className="w-4 h-4 text-muted-foreground" />
-            <span>4,892 samples</span>
+        <div className="flex items-center gap-4">
+          <div className="w-40 h-1.5 bg-secondary rounded-full overflow-hidden">
+            <div className="h-full bg-primary rounded-full transition-all duration-200" style={{ width: `${pct}%` }} />
           </div>
-          <div className="flex items-center gap-3 text-secondary-foreground">
-            <Cpu className="w-4 h-4 text-muted-foreground" />
-            <span>Llama 3.1 8B</span>
-          </div>
-          <div className="flex items-center gap-3 text-secondary-foreground">
-            <Layers className="w-4 h-4 text-muted-foreground" />
-            <span>LoRA r=16</span>
-          </div>
-          <div className="flex items-center gap-3 text-secondary-foreground">
-            <Clock className="w-4 h-4 text-muted-foreground" />
-            <span>LR 2e-5 · BS 16 · 3 epochs</span>
-          </div>
-        </div>
-
-        <div className="mt-auto">
-          <button
-            onClick={() => navigate("/")}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            ← Back to home
-          </button>
-        </div>
-      </aside>
-
-      {/* Main */}
-      <main className="flex-1 flex flex-col min-w-0">
-        {/* Status bar */}
-        <div className="border-b border-border px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${progress >= 100 ? "bg-terminal-green" : "bg-primary animate-pulse"}`} />
-              <span className="font-mono text-sm">
-                Step {Math.min(currentStep, 2000).toLocaleString()} / 2,000
-              </span>
+          <span className="text-xs font-mono text-muted-foreground">{pct}%</span>
+          {pct < 100 && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-mono">
+              <Clock className="w-3.5 h-3.5" /> {etaStr}
             </div>
-            <div className="h-1.5 w-48 bg-secondary rounded-full overflow-hidden">
-              <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 text-sm text-muted-foreground font-mono">
-            <Clock className="w-4 h-4" />
-            <span>ETA {etaMin}m {etaSec}s</span>
-          </div>
+          )}
         </div>
+      </header>
 
-        <div className="flex-1 flex flex-col p-6 gap-6 overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-0 min-h-0">
+
+        {/* Left — charts */}
+        <div className="lg:col-span-2 flex flex-col gap-4 p-5 min-h-0">
+
+          {/* Metrics row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <MetricCard icon={Activity}    label="Val loss"     value={currentVal.toFixed(4)} />
+            <MetricCard icon={Zap}         label="Tokens/sec"   value={tokensPerSec} />
+            <MetricCard icon={Cpu}         label="GPU util"     value={`${Math.round(88 + progress * 6)}%`} />
+            <MetricCard icon={Thermometer} label="GPU temp"     value={`${gpuTemp}°C`} sub={gpuTemp > 78 ? "⚠ warm" : "nominal"} />
+          </div>
+
           {/* Loss chart */}
-          <div className="surface-elevated rounded-md p-5 flex-1 min-h-[280px]">
-            <h4 className="text-sm font-medium text-muted-foreground mb-4">Training Loss</h4>
-            <ResponsiveContainer width="100%" height="85%">
-              <LineChart data={lossData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(220 16% 85%)" />
-                <XAxis
-                  dataKey="step"
-                  stroke="hsl(220 16% 80%)"
-                  tick={{ fill: "hsl(220 10% 50%)", fontSize: 12 }}
-                  tickLine={false}
-                />
-                <YAxis
-                  stroke="hsl(220 16% 80%)"
-                  tick={{ fill: "hsl(220 10% 50%)", fontSize: 12 }}
-                  tickLine={false}
-                  domain={[0, 3]}
-                />
+          <div className="surface-elevated rounded-md p-4 flex-1 min-h-[220px]">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Loss curve</p>
+            <ResponsiveContainer width="100%" height="88%">
+              <LineChart data={visibleCurves} margin={{ top: 4, right: 12, bottom: 4, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="step" stroke="hsl(var(--border))" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} tickLine={false} />
+                <YAxis stroke="hsl(var(--border))" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} tickLine={false} domain={[0, 3]} width={36} />
                 <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(0 0% 100%)",
-                    border: "1px solid hsl(220 16% 85%)",
-                    borderRadius: "6px",
-                    color: "hsl(222 47% 18%)",
-                    fontSize: 13,
-                  }}
+                  contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: 12 }}
+                  labelStyle={{ color: "hsl(var(--foreground))" }}
+                  itemStyle={{ color: "hsl(var(--foreground))" }}
                 />
-                <Line
-                  type="monotone"
-                  dataKey="loss"
-                  stroke="hsl(222 47% 25%)"
-                  strokeWidth={2}
-                  dot={false}
-                  animationDuration={300}
-                />
+                <Legend wrapperStyle={{ fontSize: 11, color: "hsl(var(--muted-foreground))" }} />
+                <Line type="monotone" dataKey="train" name="Train" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} isAnimationActive={false} />
+                <Line type="monotone" dataKey="val"   name="Val"   stroke="hsl(160 60% 45%)"    strokeWidth={2} dot={false} strokeDasharray="4 2" isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
 
-          {/* Log console */}
-          <div className="surface-elevated rounded-md flex flex-col h-56">
-            <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-terminal-green" />
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Live logs</span>
-            </div>
-            <div ref={logRef} className="flex-1 overflow-y-auto p-4 log-scroll">
-              {visibleLogs.map((line, i) => (
-                <div key={i} className="terminal-text whitespace-pre font-mono">
-                  {line}
-                </div>
-              ))}
-            </div>
+        </div>
+
+        {/* Right — logs */}
+        <div className="border-l border-border flex flex-col min-h-0">
+          <div className="px-4 py-3 border-b border-border flex items-center gap-2 shrink-0">
+            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Live logs</span>
+          </div>
+          <div ref={logRef} className="flex-1 overflow-y-auto p-4 space-y-1.5 min-h-0">
+            {visibleLogs.map((line, i) => (
+              <div key={i} className="font-mono text-xs leading-relaxed">
+                <span className={`font-semibold mr-2 ${TAG_STYLE[line.tag]}`}>[{line.tag}]</span>
+                <span className="text-secondary-foreground">{line.text}</span>
+              </div>
+            ))}
+            {pct < 100 && visibleLogs.length > 0 && (
+              <div className="font-mono text-xs text-muted-foreground animate-pulse">█</div>
+            )}
           </div>
 
-          {progress >= 100 && (
-            <div className="flex justify-end animate-fade-in">
+          {pct >= 100 && (
+            <div className="p-4 border-t border-border shrink-0 animate-fade-in">
               <button
                 onClick={() => navigate("/results")}
-                className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:opacity-90 transition-opacity"
+                className="w-full inline-flex items-center justify-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-md font-medium hover:opacity-90 transition-opacity"
               >
                 View results →
               </button>
             </div>
           )}
         </div>
-      </main>
+      </div>
     </div>
   );
 };

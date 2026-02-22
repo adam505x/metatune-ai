@@ -183,6 +183,10 @@ const Onboarding = () => {
   const [catSelections, setCatSelections] = useState<Record<string, string[]>>(defaultCategoricalSelections);
   const [ranges, setRanges] = useState<Record<string, { min: string; max: string }>>(defaultRanges);
 
+  // Loading screen between search space and recommended config
+  const [isOptimising, setIsOptimising] = useState(false);
+  const [optimiseProgress, setOptimiseProgress] = useState(0);
+
 
   // Step 4 — scheduling
   const [deadline, setDeadline] = useState("");
@@ -438,18 +442,75 @@ const Onboarding = () => {
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 pt-4">
               <button
-                onClick={() => setStep(3)}
+                onClick={() => {
+                  setIsOptimising(true);
+                  setOptimiseProgress(0);
+                  const start = Date.now();
+                  const interval = setInterval(() => {
+                    const elapsed = Date.now() - start;
+                    const pct = Math.min((elapsed / 5000) * 100, 100);
+                    setOptimiseProgress(pct);
+                    if (elapsed >= 5000) {
+                      clearInterval(interval);
+                      setIsOptimising(false);
+                      setStep(3);
+                    }
+                  }, 50);
+                }}
                 className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:opacity-90 transition-opacity"
               >
                 <Sparkles className="w-4 h-4" />
                 Skip — make a smart decision for me
               </button>
               <button
-                onClick={() => setStep(4)}
+                onClick={() => {
+                  setIsOptimising(true);
+                  setOptimiseProgress(0);
+                  const start = Date.now();
+                  const interval = setInterval(() => {
+                    const elapsed = Date.now() - start;
+                    const pct = Math.min((elapsed / 5000) * 100, 100);
+                    setOptimiseProgress(pct);
+                    if (elapsed >= 5000) {
+                      clearInterval(interval);
+                      setIsOptimising(false);
+                      setStep(3);
+                    }
+                  }, 50);
+                }}
                 className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors border border-border rounded-md px-4 py-3"
               >
                 Continue <ArrowRight className="w-4 h-4" />
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Loading screen: optimising */}
+        {isOptimising && (
+          <div className="flex flex-col items-center justify-center py-24 animate-fade-in space-y-8">
+            <div className="relative w-16 h-16">
+              <div className="absolute inset-0 rounded-full border-2 border-border" />
+              <div className="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+              <Sparkles className="absolute inset-0 m-auto w-6 h-6 text-primary" />
+            </div>
+            <div className="text-center space-y-2">
+              <h2 className="text-xl font-semibold">Optimising hyperparameters</h2>
+              <p className="text-sm text-muted-foreground max-w-sm">
+                Running Bayesian optimisation across your search space to find the best configuration…
+              </p>
+            </div>
+            <div className="w-64 space-y-2">
+              <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-100"
+                  style={{ width: `${optimiseProgress}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>{Math.round(optimiseProgress)}%</span>
+                <span>{optimiseProgress < 30 ? "Sampling prior…" : optimiseProgress < 60 ? "Fitting GP surrogate…" : optimiseProgress < 85 ? "Evaluating acquisition fn…" : "Selecting best config…"}</span>
+              </div>
             </div>
           </div>
         )}
